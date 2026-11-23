@@ -884,4 +884,10 @@ if (isMain) {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+  process.on('uncaughtException', (err) => {
+    console.error('[droidcloud] uncaughtException:', err);
+  });
+  process.on('unhandledRejection', (err) => {
+    console.error('[droidcloud] unhandledRejection:', err);
+  });
 }

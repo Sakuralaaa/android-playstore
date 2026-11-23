@@ -53,7 +53,9 @@ export class WebSocketClient extends EventEmitter {
     socket.on('data', (chunk) => this._onData(chunk));
     socket.on('error', (err) => {
       if (!this.closed) {
-        this.emit('error', err);
+        if (this.listenerCount('error') > 0) {
+          this.emit('error', err);
+        }
         this._cleanup(1006, 'socket error');
       }
     });
@@ -100,8 +102,16 @@ export class WebSocketClient extends EventEmitter {
   }
 
   _writeRaw(buf) {
+    if (this.closed || this.socket.destroyed || !this.socket.writable) {
+      this._cleanup(1006, 'write error');
+      return false;
+    }
     try {
-      return this.socket.write(buf);
+      return this.socket.write(buf, (err) => {
+        if (err) {
+          this._cleanup(1006, 'write error');
+        }
+      });
     } catch {
       this._cleanup(1006, 'write error');
       return false;
