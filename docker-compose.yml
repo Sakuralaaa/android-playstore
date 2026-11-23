@@ -1,8 +1,7 @@
 services:
   droidcloud:
+    image: ghcr.io/sakuralaaa/android-playstore:latest
     build: .
-    # 推送到 GitHub 后也可以直接改用自动构建的 GHCR 镜像：
-    # image: ghcr.io/<your-github-username>/<your-repo>:latest
     container_name: droidcloud
     devices:
       - /dev/kvm:/dev/kvm

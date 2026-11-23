@@ -45,9 +45,9 @@ docker compose up -d --build
 
 ### 2. Atoll 托管部署建议
 
-1. 将本仓库推送到 GitHub（仓库内置 GitHub Actions，会自动构建并推送 `ghcr.io/<你的用户名>/<仓库名>:latest`）。
+1. 本仓库内置 GitHub Actions，每次推送到 `main` 会自动构建并发布镜像 `ghcr.io/sakuralaaa/android-playstore:latest`。
 2. 在 Atoll 中配置：
-   - **构建方式**：直接拉取 GitHub 仓库构建 `Dockerfile`，或使用 GHCR 镜像
+   - **构建方式**：直接拉取本仓库构建 `Dockerfile`，或拉取 `ghcr.io/sakuralaaa/android-playstore:latest`
    - **设备映射**：挂载 `/dev/kvm:/dev/kvm`
    - **共享内存**：`shm_size: 2g`
    - **暴露端口**：仅需反代 HTTP 端口 **`6080`**（WebSocket `/ws` 复用同一端口，无需额外开放 UDP/VNC 端口）
