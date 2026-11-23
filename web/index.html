@@ -3,36 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#07090e" />
+  <meta name="theme-color" content="#0a0a0b" />
   <title>DroidCloud · 原生云手机平台</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%236366f1'/%3E%3Cstop offset='100%25' stop-color='%2310b981'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='%230d111a'/%3E%3Crect x='17' y='10' width='30' height='44' rx='6' fill='none' stroke='url(%23g)' stroke-width='4'/%3E%3Ccircle cx='32' cy='46' r='2.5' fill='%2310b981'/%3E%3C/svg%3E" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23151518'/%3E%3Crect x='18' y='11' width='28' height='42' rx='5' fill='none' stroke='%23fafafa' stroke-width='3.5'/%3E%3Ccircle cx='32' cy='46' r='2.2' fill='%23fafafa'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
-  <!-- Ambient Background -->
-  <div class="bg-ambient" aria-hidden="true">
-    <div class="bg-orb bg-orb-1"></div>
-    <div class="bg-orb bg-orb-2"></div>
-  </div>
-
   <!-- VIEW 1: Login Screen -->
   <main id="view-login" class="view view-center hidden">
     <div class="login-card glass-panel">
       <div class="brand-badge">
-        <svg viewBox="0 0 36 36" width="32" height="32" fill="none">
-          <rect x="8" y="3" width="20" height="30" rx="5" stroke="url(#brandGrad)" stroke-width="2.4" />
-          <line x1="15" y1="7" x2="21" y2="7" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round" />
-          <circle cx="18" cy="28" r="1.6" fill="#10b981" />
-          <defs>
-            <linearGradient id="brandGrad" x1="8" y1="3" x2="28" y2="33" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#818cf8" />
-              <stop offset="1" stop-color="#34d399" />
-            </linearGradient>
-          </defs>
+        <svg viewBox="0 0 36 36" width="26" height="26" fill="none">
+          <rect x="9" y="4" width="18" height="28" rx="4" stroke="#fafafa" stroke-width="2.2" />
+          <line x1="15" y1="8" x2="21" y2="8" stroke="#71717a" stroke-width="1.8" stroke-linecap="round" />
+          <circle cx="18" cy="27.5" r="1.4" fill="#fafafa" />
         </svg>
       </div>
       <h1 class="login-title">DroidCloud</h1>
-      <p class="login-subtitle">多机原生 Android · Google Play 云手机平台</p>
+      <p class="login-subtitle">原生 Android 云手机与自动化控制平台</p>
 
       <form id="login-form" class="login-form" autocomplete="on">
         <label class="field-label" for="login-password">访问密码</label>
@@ -46,7 +34,7 @@
             required
           />
           <button type="button" id="toggle-pw-btn" class="icon-btn-inline" title="显示/隐藏密码" aria-label="显示或隐藏密码">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
@@ -54,14 +42,11 @@
         </div>
         <div id="login-error" class="form-error hidden"></div>
         <button type="submit" id="login-submit" class="btn btn-primary btn-block">
-          <span>进入云手机中心</span>
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2">
-            <path d="M5 12h14M13 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+          <span>登录控制台</span>
         </button>
       </form>
       <div class="login-footer">
-        <span class="dot-pill"><span class="dot dot-emerald"></span>按需开机 · 零闲置耗电</span>
+        <span class="dot-pill"><span class="dot dot-emerald"></span>按需开机 · 开放 API</span>
         <span id="login-phone-count" class="meta-chip">Google Play</span>
       </div>
     </div>
@@ -72,15 +57,9 @@
     <header class="topbar glass-bar">
       <div class="topbar-left">
         <div class="topbar-brand">
-          <svg viewBox="0 0 36 36" width="22" height="22" fill="none">
-            <rect x="8" y="3" width="20" height="30" rx="5" stroke="url(#dashGrad)" stroke-width="2.6" />
-            <circle cx="18" cy="28" r="1.8" fill="#10b981" />
-            <defs>
-              <linearGradient id="dashGrad" x1="8" y1="3" x2="28" y2="33" gradientUnits="userSpaceOnUse">
-                <stop stop-color="#818cf8" />
-                <stop offset="1" stop-color="#34d399" />
-              </linearGradient>
-            </defs>
+          <svg viewBox="0 0 36 36" width="20" height="20" fill="none">
+            <rect x="9" y="4" width="18" height="28" rx="4" stroke="#fafafa" stroke-width="2.4" />
+            <circle cx="18" cy="27.5" r="1.5" fill="#fafafa" />
           </svg>
           <span>DroidCloud</span>
         </div>
@@ -95,6 +74,12 @@
       </div>
 
       <div class="topbar-right">
+        <button id="btn-open-api" class="btn btn-subtle btn-sm" title="查看 API Token 与 AI/脚本接入文档">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>开放 API</span>
+        </button>
         <button id="btn-new-phone" class="btn btn-primary btn-sm">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4">
             <path d="M12 5v14M5 12h14" stroke-linecap="round" />
@@ -113,8 +98,8 @@
       <div class="dashboard-container">
         <div class="dashboard-intro">
           <div>
-            <h2>我的云手机</h2>
-            <p class="muted small">平时保持关机不占 CPU/内存，需要时一键按需启动；开机自动匹配出口 IP 时区与 GPS，支持多型号与多 Android 版本。</p>
+            <h2>云手机实例</h2>
+            <p class="muted small">按需启动、无画面自动暂停编码并息屏节能；开机自动同步出口 IP 时区与 GPS，支持外部 API 远程操控。</p>
           </div>
         </div>
 
@@ -127,7 +112,7 @@
   <div id="view-console" class="console-shell hidden">
     <header class="topbar glass-bar">
       <div class="topbar-left">
-        <button id="btn-back-dashboard" class="btn btn-subtle btn-sm" title="返回设备中心（保持手机运行）">
+        <button id="btn-back-dashboard" class="btn btn-subtle btn-sm" title="返回设备中心">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2">
             <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
@@ -144,7 +129,7 @@
 
       <div class="topbar-center">
         <div class="segmented" id="quality-segmented" role="group" aria-label="画质档位">
-          <button class="seg-btn" data-preset="smooth">流畅</button>
+          <button class="seg-btn" data-preset="smooth">省流</button>
           <button class="seg-btn active" data-preset="balanced">均衡</button>
           <button class="seg-btn" data-preset="ultra">高清</button>
         </div>
@@ -160,33 +145,33 @@
 
       <div class="topbar-right">
         <button class="nav-tool-btn" data-drawer="apps" title="应用管理与快捷启动">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" />
             <rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
           </svg>
           <span>应用</span>
         </button>
         <button class="nav-tool-btn" data-drawer="apk" title="安装 APK">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
           <span>装包</span>
         </button>
         <button class="nav-tool-btn" data-drawer="files" title="文件传输">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
           </svg>
           <span>文件</span>
         </button>
         <button class="nav-tool-btn" data-drawer="location" title="虚拟定位与 IP 同步">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z" />
             <circle cx="12" cy="10" r="2.5" />
           </svg>
           <span>定位</span>
         </button>
-        <button class="nav-tool-btn" data-drawer="system" title="系统状态与日志">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+        <button class="nav-tool-btn" data-drawer="system" title="系统状态、诊断与日志">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M3 12h4l3-7 4 14 3-7h4" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
           <span>系统</span>
@@ -208,7 +193,7 @@
               <div id="pinch-dot-2" class="pinch-dot hidden"></div>
               <div id="stream-overlay" class="stream-overlay">
                 <div class="spinner-ring"></div>
-                <p id="stream-overlay-text">正在建立低延迟视频通道…</p>
+                <p id="stream-overlay-text">正在唤醒并建立视频流…</p>
               </div>
             </div>
             <textarea
@@ -224,64 +209,64 @@
 
           <aside class="hardware-dock glass-panel" aria-label="手机按键栏">
             <button class="dock-btn" data-action="back" title="返回 (鼠标右键)">
-              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
               <span>返回</span>
             </button>
             <button class="dock-btn" data-action="home" title="回到桌面 (鼠标中键)">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="7" />
               </svg>
               <span>主页</span>
             </button>
             <button class="dock-btn" data-action="recents" title="最近任务">
-              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="5" y="5" width="14" height="14" rx="2.5" />
               </svg>
               <span>多任务</span>
             </button>
             <div class="dock-divider"></div>
             <button class="dock-btn" data-action="vol_up" title="音量 +">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M11 5L6 9H2v6h4l5 4V5zM19 9v6M16 12h6" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
               <span>音量+</span>
             </button>
             <button class="dock-btn" data-action="vol_down" title="音量 -">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M11 5L6 9H2v6h4l5 4V5zM16 12h6" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
               <span>音量-</span>
             </button>
             <button class="dock-btn" data-action="power" title="电源 / 锁屏 / 唤醒">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 3v9M18.36 6.64a9 9 0 1 1-12.73 0" stroke-linecap="round" />
               </svg>
               <span>电源</span>
             </button>
             <div class="dock-divider"></div>
             <button class="dock-btn" data-action="rotate" title="旋转屏幕">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
               <span>旋转</span>
             </button>
             <button class="dock-btn" data-action="notifications" title="下拉通知栏">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
               <span>通知栏</span>
             </button>
             <button class="dock-btn" id="btn-screenshot" title="高清截图">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                 <circle cx="12" cy="13" r="4" />
               </svg>
               <span>截图</span>
             </button>
             <button class="dock-btn" data-drawer="clipboard" title="剪贴板同步">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="8" y="2" width="8" height="4" rx="1" />
                 <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
               </svg>
@@ -297,7 +282,7 @@
           <span>·</span>
           <span>Alt + 拖拽双指缩放</span>
           <span>·</span>
-          <span>直接拖入 .apk 安装</span>
+          <span>拖入 .apk 自动安装</span>
           <span>·</span>
           <span>Ctrl+K 输入中文</span>
         </div>
@@ -360,19 +345,20 @@
           <div class="form-field">
             <label class="field-label" for="pf-ram">分配内存</label>
             <select id="pf-ram">
-              <option value="2048">2 GB（轻量）</option>
-              <option value="3072">3 GB（省内存多开）</option>
-              <option value="4096" selected>4 GB（推荐）</option>
-              <option value="6144">6 GB（流畅多任务）</option>
+              <option value="2048">2 GB（极省内存）</option>
+              <option value="3072" selected>3 GB（省内存推荐）</option>
+              <option value="4096">4 GB（充裕多任务）</option>
+              <option value="6144">6 GB（重度使用）</option>
             </select>
           </div>
 
           <div class="form-field">
             <label class="field-label" for="pf-cores">分配 CPU 核心</label>
             <select id="pf-cores">
-              <option value="2">2 核（适合多开）</option>
-              <option value="4" selected>4 核（推荐）</option>
-              <option value="6">6 核（单机满血）</option>
+              <option value="2">2 核（低负载多开）</option>
+              <option value="3" selected>3 核（低占用推荐）</option>
+              <option value="4">4 核（高性能）</option>
+              <option value="6">6 核（满血）</option>
             </select>
           </div>
 
@@ -402,7 +388,14 @@
           <div class="form-field form-full">
             <label class="checkbox-inline">
               <input type="checkbox" id="pf-auto-ip" checked />
-              <span>开机自动根据出口 IP 同步对应时区（TZ）与 GPS 定位（推荐，减少 Google 风控）</span>
+              <span>开机自动根据出口 IP 同步对应时区（TZ）与 GPS 定位</span>
+            </label>
+          </div>
+
+          <div class="form-field form-full">
+            <label class="checkbox-inline">
+              <input type="checkbox" id="pf-eco-mode" checked />
+              <span>节能低占用模式（无画面连接 15 秒后自动暂停编码并息屏，大幅降低 CPU 占用）</span>
             </label>
           </div>
         </div>
@@ -415,6 +408,40 @@
           </div>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Open API / AI Agent Integration Modal -->
+  <div id="api-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-wide glass-panel">
+      <div class="modal-header">
+        <h4>开放 API 接入（AI Agent / 脚本操控）</h4>
+        <button id="api-modal-close" class="icon-btn">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      <p class="muted small">使用 Bearer Token 即可让 AI（如 Antigravity / MCP / Python 脚本）远程开机、截图、读取 UI 控件树、点击、滑动、输入中文或执行 ADB 命令。</p>
+
+      <div>
+        <label class="field-label">API Bearer Token</label>
+        <div class="token-row">
+          <input id="api-token-input" type="password" readonly />
+          <button id="api-token-reveal" class="btn btn-subtle btn-sm">显示</button>
+          <button id="api-token-copy" class="btn btn-primary btn-sm">复制</button>
+          <button id="api-token-rotate" class="btn btn-danger btn-sm">重置</button>
+        </div>
+      </div>
+
+      <div class="terminal-box">
+        <div class="terminal-header">
+          <span>快速调用示例（支持 /api/docs 获取完整接口清单）</span>
+          <button id="api-copy-example" class="btn btn-ghost btn-sm" style="padding:3px 8px">复制示例</button>
+        </div>
+        <pre id="api-example-code" class="terminal-body" style="height:240px"></pre>
+      </div>
     </div>
   </div>
 
@@ -464,7 +491,7 @@
   <!-- Global Drag & Drop APK Overlay -->
   <div id="drop-overlay" class="drop-overlay hidden">
     <div class="drop-box glass-panel">
-      <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="#34d399" stroke-width="1.8">
+      <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#fafafa" stroke-width="1.8">
         <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
       <h3>松开鼠标即可上传</h3>

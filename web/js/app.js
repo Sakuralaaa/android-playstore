@@ -349,12 +349,13 @@ function openPhoneModal(editId = null) {
   document.getElementById('pf-device').value = editing ? editing.device : 'pixel_8';
   document.getElementById('pf-screen').value = editing ? editing.screenPreset : 'balanced';
   document.getElementById('pf-locale').value = editing ? editing.localeMode : 'zh-CN';
-  document.getElementById('pf-ram').value = String(editing ? editing.ramMb : 4096);
-  document.getElementById('pf-cores').value = String(editing ? editing.cores : 4);
+  document.getElementById('pf-ram').value = String(editing ? editing.ramMb : 3072);
+  document.getElementById('pf-cores').value = String(editing ? editing.cores : 3);
   document.getElementById('pf-idle').value = String(editing ? editing.idleStopMinutes : 30);
   document.getElementById('pf-storage').value = editing ? editing.dataSize : '16G';
   document.getElementById('pf-proxy').value = editing ? editing.httpProxy || '' : '';
   document.getElementById('pf-auto-ip').checked = editing ? Boolean(editing.autoIpEnv) : true;
+  document.getElementById('pf-eco-mode').checked = editing ? editing.ecoMode !== false : true;
   document.getElementById('pf-hint').textContent = editing
     ? '修改配置后，将在下次开机时生效'
     : '新建后默认处于关机状态，按需开机不占 CPU 和内存';
@@ -387,6 +388,7 @@ phoneForm.addEventListener('submit', async (e) => {
     dataSize: document.getElementById('pf-storage').value,
     httpProxy: document.getElementById('pf-proxy').value.trim(),
     autoIpEnv: document.getElementById('pf-auto-ip').checked,
+    ecoMode: document.getElementById('pf-eco-mode').checked,
   };
   try {
     if (id) {
@@ -431,6 +433,86 @@ function closeLogsModal() {
 document.getElementById('logs-modal-close').addEventListener('click', closeLogsModal);
 logsModal.addEventListener('click', (e) => {
   if (e.target === logsModal) closeLogsModal();
+});
+
+// Open API Modal
+const apiModal = document.getElementById('api-modal');
+const apiTokenInput = document.getElementById('api-token-input');
+const apiExampleCode = document.getElementById('api-example-code');
+
+function renderApiExamples(token) {
+  const base = location.origin;
+  const sampleId = appState.phones[0]?.id || 'phone-main';
+  apiExampleCode.textContent = [
+    `# 1. 获取所有云手机列表与完整 API 文档`,
+    `curl -H "Authorization: Bearer ${token}" "${base}/api/phones"`,
+    `curl -H "Authorization: Bearer ${token}" "${base}/api/docs"`,
+    ``,
+    `# 2. 开机 / 关机指定云手机`,
+    `curl -X POST -H "Authorization: Bearer ${token}" "${base}/api/phones/${sampleId}/start"`,
+    `curl -X POST -H "Authorization: Bearer ${token}" "${base}/api/phones/${sampleId}/stop"`,
+    ``,
+    `# 3. 获取屏幕截图 (PNG 或 JSON Base64) & UI 控件树 (适合 AI Agent)`,
+    `curl -H "Authorization: Bearer ${token}" "${base}/api/phones/${sampleId}/screenshot?format=base64"`,
+    `curl -H "Authorization: Bearer ${token}" "${base}/api/phones/${sampleId}/ui-tree"`,
+    ``,
+    `# 4. 点击 / 滑动 / 输入中英文 / 按键 / 启动应用`,
+    `curl -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" \\`,
+    `  -d '{"x":360,"y":800}' "${base}/api/phones/${sampleId}/input/tap"`,
+    `curl -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" \\`,
+    `  -d '{"text":"你好 Google","enter":true}' "${base}/api/phones/${sampleId}/input/text"`,
+    `curl -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" \\`,
+    `  -d '{"packageName":"com.android.vending"}' "${base}/api/phones/${sampleId}/apps/launch"`,
+  ].join('\n');
+}
+
+async function openApiModal() {
+  apiModal.classList.remove('hidden');
+  apiTokenInput.type = 'password';
+  try {
+    const data = await api('/api/token');
+    apiTokenInput.value = data.token;
+    document.getElementById('api-token-rotate').disabled = Boolean(data.fromEnv);
+    renderApiExamples(data.token);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+document.getElementById('btn-open-api').addEventListener('click', openApiModal);
+document.getElementById('api-modal-close').addEventListener('click', () => apiModal.classList.add('hidden'));
+apiModal.addEventListener('click', (e) => {
+  if (e.target === apiModal) apiModal.classList.add('hidden');
+});
+document.getElementById('api-token-reveal').addEventListener('click', () => {
+  apiTokenInput.type = apiTokenInput.type === 'password' ? 'text' : 'password';
+});
+document.getElementById('api-token-copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(apiTokenInput.value);
+    toast('API Token 已复制', 'success');
+  } catch {
+    toast('请点击显示后手动复制', 'error');
+  }
+});
+document.getElementById('api-copy-example').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(apiExampleCode.textContent);
+    toast('示例代码已复制', 'success');
+  } catch {
+    toast('复制失败', 'error');
+  }
+});
+document.getElementById('api-token-rotate').addEventListener('click', async () => {
+  if (!confirm('重置后旧 API Token 将立即失效，确定要生成新 Token 吗？')) return;
+  try {
+    const data = await api('/api/token/rotate', { method: 'POST' });
+    apiTokenInput.value = data.token;
+    renderApiExamples(data.token);
+    toast('已生成新的 API Token', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 });
 
 // Video decoder & input & drawer

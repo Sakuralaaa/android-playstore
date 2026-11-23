@@ -45,10 +45,17 @@ export function isHttpsRequest(req) {
 }
 
 export class AuthManager {
-  constructor({ password = null, persistDir = null, secret = null } = {}) {
+  constructor({ password = null, apiToken = null, persistDir = null, secret = null } = {}) {
     this.generated = false;
+    this.apiTokenFromEnv = false;
+    this.persistDir = persistDir;
+
     this.password = this._resolvePassword(password, persistDir);
     this._passwordHash = sha256(this.password);
+
+    this.apiToken = this._resolveApiToken(apiToken, persistDir);
+    this._apiTokenHash = sha256(this.apiToken);
+
     this._secret = secret
       ? sha256(secret)
       : crypto
@@ -103,6 +110,90 @@ export class AuthManager {
     return generated;
   }
 
+  _resolveApiToken(explicit, persistDir) {
+    const envTok = explicit ?? process.env.API_TOKEN ?? '';
+    if (String(envTok).trim().length >= 8) {
+      this.apiTokenFromEnv = true;
+      return String(envTok).trim();
+    }
+
+    const candidates = [
+      persistDir ? path.join(persistDir, '.droidcloud_api_token') : null,
+      '/root/.android/.droidcloud_api_token',
+      '/tmp/.droidcloud_api_token',
+    ].filter(Boolean);
+
+    for (const file of candidates) {
+      try {
+        if (fs.existsSync(file)) {
+          const saved = fs.readFileSync(file, 'utf8').trim();
+          if (saved.length >= 16) return saved;
+        }
+      } catch {
+        // next
+      }
+    }
+
+    const generated = `dc_${crypto.randomBytes(24).toString('hex')}`;
+    this._saveApiToken(generated);
+    return generated;
+  }
+
+  _saveApiToken(token) {
+    const candidates = [
+      this.persistDir ? path.join(this.persistDir, '.droidcloud_api_token') : null,
+      '/root/.android/.droidcloud_api_token',
+      '/tmp/.droidcloud_api_token',
+    ].filter(Boolean);
+
+    for (const file of candidates) {
+      try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, `${token}\n`, { mode: 0o600 });
+        return;
+      } catch {
+        // next
+      }
+    }
+  }
+
+  rotateApiToken() {
+    if (this.apiTokenFromEnv) {
+      throw Object.assign(new Error('当前 API Token 由环境变量 API_TOKEN 固定指定，请在容器配置中修改'), {
+        statusCode: 400,
+      });
+    }
+    const next = `dc_${crypto.randomBytes(24).toString('hex')}`;
+    this.apiToken = next;
+    this._apiTokenHash = sha256(next);
+    this._saveApiToken(next);
+    return next;
+  }
+
+  verifyApiToken(candidate) {
+    if (typeof candidate !== 'string' || candidate.length === 0) return false;
+    return crypto.timingSafeEqual(sha256(candidate), this._apiTokenHash);
+  }
+
+  extractApiToken(req) {
+    const authHdr = String(req.headers.authorization || '').trim();
+    if (authHdr.toLowerCase().startsWith('bearer ')) {
+      return authHdr.slice(7).trim();
+    }
+    const apiKeyHdr = req.headers['x-api-key'];
+    if (typeof apiKeyHdr === 'string' && apiKeyHdr.trim()) {
+      return apiKeyHdr.trim();
+    }
+    try {
+      const url = new URL(req.url || '/', 'http://localhost');
+      const qTok = url.searchParams.get('token');
+      if (qTok) return qTok.trim();
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
   checkRateLimit(ip) {
     const now = Date.now();
     const list = (this._attempts.get(ip) || []).filter((ts) => now - ts < RATE_WINDOW_MS);
@@ -132,8 +223,7 @@ export class AuthManager {
 
   verifyPassword(candidate) {
     if (typeof candidate !== 'string' || candidate.length === 0) return false;
-    const candidateHash = sha256(candidate);
-    return crypto.timingSafeEqual(candidateHash, this._passwordHash);
+    return crypto.timingSafeEqual(sha256(candidate), this._passwordHash);
   }
 
   createToken() {
@@ -182,6 +272,10 @@ export class AuthManager {
   }
 
   isAuthenticated(req) {
+    const apiTok = this.extractApiToken(req);
+    if (apiTok && this.verifyApiToken(apiTok)) {
+      return true;
+    }
     const cookies = parseCookies(req.headers.cookie || '');
     const token = cookies[SESSION_COOKIE];
     return this.verifyToken(token);

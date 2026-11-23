@@ -40,9 +40,9 @@ export const WS_FRAME_TYPE = {
 };
 
 export const QUALITY_PRESETS = {
-  smooth: { label: '流畅 (30 FPS)', maxSize: 960, maxFps: 30, bitRate: 2_500_000 },
-  balanced: { label: '均衡 (45 FPS)', maxSize: 1280, maxFps: 45, bitRate: 4_500_000 },
-  ultra: { label: '高清 (60 FPS)', maxSize: 1600, maxFps: 60, bitRate: 8_000_000 },
+  smooth: { label: '省流 (20 FPS)', maxSize: 720, maxFps: 20, bitRate: 1_500_000 },
+  balanced: { label: '均衡 (30 FPS)', maxSize: 960, maxFps: 30, bitRate: 3_000_000 },
+  ultra: { label: '高清 (60 FPS)', maxSize: 1280, maxFps: 60, bitRate: 6_000_000 },
 };
 
 // --- Exact scrcpy v5.0.1 control message encoders ---

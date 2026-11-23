@@ -89,10 +89,50 @@ async function streamBodyToTempFile(req, prefix = 'upload', maxBytes = 512 * 102
   }
 }
 
+function buildApiDocs(baseUrl) {
+  return {
+    name: 'DroidCloud Open Control API',
+    version: '1.0',
+    auth: {
+      headers: ['Authorization: Bearer <API_TOKEN>', 'X-API-Key: <API_TOKEN>'],
+      websocket: 'wss://<host>/ws?phoneId=<id>&token=<API_TOKEN>',
+    },
+    baseUrl,
+    endpoints: [
+      { method: 'GET', path: '/api/phones', desc: 'List all cloud phones, states, IP geo, and host metrics' },
+      { method: 'POST', path: '/api/phones', desc: 'Create a new cloud phone', body: { name: 'string', androidVersion: '14|15|16', device: 'pixel_8', screenPreset: 'smooth|balanced|hd', ramMb: 3072, cores: 3, localeMode: 'zh-CN|auto_ip|en-US', autoIpEnv: true, ecoMode: true, httpProxy: '', idleStopMinutes: 30, autoStart: false } },
+      { method: 'POST', path: '/api/phones/:id/start', desc: 'Boot phone on demand' },
+      { method: 'POST', path: '/api/phones/:id/stop', desc: 'Save snapshot & power off phone' },
+      { method: 'GET', path: '/api/phones/:id/screen-info', desc: 'Get screen width, height, and current focused app/activity' },
+      { method: 'GET', path: '/api/phones/:id/screenshot', desc: 'Capture PNG screenshot (?format=base64 for JSON base64)' },
+      { method: 'GET', path: '/api/phones/:id/ui-tree', desc: 'Dump structured Android Accessibility UI elements (?xml=1 to include raw XML)' },
+      { method: 'POST', path: '/api/phones/:id/input/tap', desc: 'Tap coordinates', body: { x: 360, y: 800, normalized: false } },
+      { method: 'POST', path: '/api/phones/:id/input/long-press', desc: 'Long press coordinates', body: { x: 360, y: 800, durationMs: 800 } },
+      { method: 'POST', path: '/api/phones/:id/input/swipe', desc: 'Swipe gesture', body: { x1: 360, y1: 1200, x2: 360, y2: 400, durationMs: 300 } },
+      { method: 'POST', path: '/api/phones/:id/input/text', desc: 'Input ASCII or Chinese/Unicode text', body: { text: 'hello 你好', enter: false } },
+      { method: 'POST', path: '/api/phones/:id/input/key', desc: 'Press key by name (home|back|recents|enter|delete|power|vol_up|vol_down) or Android keycode', body: { key: 'home' } },
+      { method: 'POST', path: '/api/phones/:id/shell', desc: 'Execute an adb shell command on the phone', body: { command: 'getprop ro.product.model', timeoutMs: 10000 } },
+      { method: 'GET', path: '/api/phones/:id/apps', desc: 'List installed Google and user apps' },
+      { method: 'POST', path: '/api/phones/:id/apps/launch', desc: 'Launch an app by packageName', body: { packageName: 'com.android.vending' } },
+      { method: 'POST', path: '/api/phones/:id/apk/install', desc: 'Install APK (raw binary body + X-Filename header)' },
+      { method: 'POST', path: '/api/phones/:id/location', desc: 'Set mock GPS location', body: { lon: -118.2437, lat: 34.0522 } },
+      { method: 'POST', path: '/api/phones/:id/sync-ip', desc: 'Re-detect exit IP and sync GPS' },
+      { method: 'POST', path: '/api/phones/:id/diagnose', desc: 'Run internal network/DNS/GMS diagnostic report' },
+      { method: 'POST', path: '/api/phones/:id/fix-google', desc: 'Reset Wi-Fi, sync time, and clear Play Store cache' },
+    ],
+  };
+}
+
 export function createDroidCloudServer(options = {}) {
   const port = Number(options.port ?? process.env.PORT ?? 6080);
   const host = options.host ?? process.env.HOST ?? '0.0.0.0';
-  const auth = options.auth ?? new AuthManager({ password: options.password, persistDir: options.persistDir });
+  const auth =
+    options.auth ??
+    new AuthManager({
+      password: options.password,
+      apiToken: options.apiToken,
+      persistDir: options.persistDir,
+    });
   const phones =
     options.phones ??
     new PhoneManager({
@@ -107,8 +147,7 @@ export function createDroidCloudServer(options = {}) {
     verifyClient: (req) => auth.isAuthenticated(req),
   });
 
-  // Track which phoneId each WebSocket client is watching (null = dashboard overview)
-  const clientScope = new Map(); // wsClient -> phoneId | null
+  const clientScope = new Map();
 
   function broadcastToPhone(phoneId, obj) {
     const text = JSON.stringify(obj);
@@ -128,7 +167,6 @@ export function createDroidCloudServer(options = {}) {
     }
   }
 
-  // Wire PhoneManager events -> WebSockets
   phones.on('phones_changed', (list) => {
     wss.broadcastJson({ type: 'phones', phones: list });
   });
@@ -158,7 +196,6 @@ export function createDroidCloudServer(options = {}) {
     const phoneId = url.searchParams.get('phoneId') || null;
     clientScope.set(client, phoneId);
 
-    // Send fleet overview immediately
     client.sendJson({ type: 'phones', phones: phones.listPhones() });
 
     if (phoneId) {
@@ -203,6 +240,7 @@ export function createDroidCloudServer(options = {}) {
     const rt = phones.getRuntime(phoneId);
     const scrcpy = rt?.scrcpy;
     if (!scrcpy || !Buffer.isBuffer(buf) || buf.length < 2) return;
+    rt.lastActiveAt = Date.now();
     const type = buf[0];
 
     if (type === 0x10 && buf.length >= 18) {
@@ -260,6 +298,7 @@ export function createDroidCloudServer(options = {}) {
     const rt = phones.getRuntime(phoneId);
     const scrcpy = rt?.scrcpy;
     if (!scrcpy) return;
+    rt.lastActiveAt = Date.now();
 
     switch (msg.type) {
       case 'key':
@@ -292,13 +331,29 @@ export function createDroidCloudServer(options = {}) {
     }
   }
 
-  function requireRunningAdb(phoneId) {
+  async function requireRunningAdb(phoneId, { wake = true } = {}) {
     const rt = phones.getRuntime(phoneId);
     if (!rt) throw Object.assign(new Error('找不到指定的云手机'), { statusCode: 404 });
     if (rt.status !== 'running' || !rt.adb) {
       throw Object.assign(new Error('该云手机尚未开机就绪'), { statusCode: 409 });
     }
+    if (wake) {
+      await phones.ensureAwake(phoneId);
+    } else {
+      rt.lastActiveAt = Date.now();
+    }
     return rt;
+  }
+
+  async function resolveCoords(rt, x, y, normalized = false) {
+    if (!normalized) return { x: Number(x), y: Number(y) };
+    const info = rt.scrcpy?.meta?.width
+      ? { width: rt.scrcpy.meta.width, height: rt.scrcpy.meta.height }
+      : await rt.adb.getScreenInfo();
+    return {
+      x: Math.round(Math.max(0, Math.min(1, Number(x))) * info.width),
+      y: Math.round(Math.max(0, Math.min(1, Number(y))) * info.height),
+    };
   }
 
   async function handleRequest(req, res) {
@@ -362,7 +417,7 @@ export function createDroidCloudServer(options = {}) {
 
     if (pathname.startsWith('/api/')) {
       if (!auth.isAuthenticated(req)) {
-        return sendJson(res, 401, { error: '未登录或会话已过期' });
+        return sendJson(res, 401, { error: '未登录或 API Token 无效' });
       }
       return handleProtectedApi(req, res, url);
     }
@@ -371,9 +426,27 @@ export function createDroidCloudServer(options = {}) {
   }
 
   async function handleProtectedApi(req, res, url) {
-    const pathname = url.pathname;
+    // Support optional /api/v1/* alias seamlessly
+    const pathname = url.pathname.replace(/^\/api\/v1\//, '/api/');
     try {
-      // Fleet & Catalog endpoints
+      if (pathname === '/api/docs' && req.method === 'GET') {
+        const proto = String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+        const hostHdr = req.headers.host || 'localhost:6080';
+        return sendJson(res, 200, buildApiDocs(`${proto}://${hostHdr}`));
+      }
+
+      if (pathname === '/api/token' && req.method === 'GET') {
+        return sendJson(res, 200, {
+          token: auth.apiToken,
+          fromEnv: auth.apiTokenFromEnv,
+        });
+      }
+
+      if (pathname === '/api/token/rotate' && req.method === 'POST') {
+        const token = auth.rotateApiToken();
+        return sendJson(res, 200, { token, fromEnv: false });
+      }
+
       if (pathname === '/api/catalog' && req.method === 'GET') {
         return sendJson(res, 200, phones.getCatalog());
       }
@@ -396,7 +469,6 @@ export function createDroidCloudServer(options = {}) {
         return sendJson(res, 201, { phone: phones.getPhoneSummary(created.id) });
       }
 
-      // Per-phone routes: /api/phones/:id[/action...]
       const m = pathname.match(/^\/api\/phones\/([^/]+)(\/.*)?$/);
       if (m) {
         const phoneId = decodeURIComponent(m[1]);
@@ -462,10 +534,26 @@ export function createDroidCloudServer(options = {}) {
       return sendJson(res, 200, { logs: phones.getPhoneLogs(phoneId) });
     }
 
-    // Running-device ADB routes
+    // --- Open AI / Automation Control APIs ---
+
+    if (sub === '/screen-info' && req.method === 'GET') {
+      const rt = await requireRunningAdb(phoneId, { wake: false });
+      const info = await rt.adb.getScreenInfo();
+      return sendJson(res, 200, { ...info, phone: phones.getPhoneSummary(phoneId) });
+    }
+
     if (sub === '/screenshot' && req.method === 'GET') {
-      const rt = requireRunningAdb(phoneId);
+      const rt = await requireRunningAdb(phoneId);
       const png = await rt.adb.screenshot();
+      if (url.searchParams.get('format') === 'base64') {
+        const info = await rt.adb.getScreenInfo().catch(() => ({ width: 720, height: 1600 }));
+        return sendJson(res, 200, {
+          mime: 'image/png',
+          width: info.width,
+          height: info.height,
+          base64: png.toString('base64'),
+        });
+      }
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       res.writeHead(200, {
         'Content-Type': 'image/png',
@@ -476,8 +564,91 @@ export function createDroidCloudServer(options = {}) {
       return res.end(png);
     }
 
+    if (sub === '/ui-tree' && req.method === 'GET') {
+      const rt = await requireRunningAdb(phoneId);
+      const includeXml = url.searchParams.get('xml') === '1' || url.searchParams.get('xml') === 'true';
+      const tree = await rt.adb.getUiTree({ includeXml });
+      return sendJson(res, 200, tree);
+    }
+
+    if (sub === '/input/tap' && req.method === 'POST') {
+      const rt = await requireRunningAdb(phoneId);
+      const body = await readJsonBody(req);
+      const pt = await resolveCoords(rt, body.x, body.y, Boolean(body.normalized));
+      await rt.adb.inputTap(pt.x, pt.y);
+      return sendJson(res, 200, { ok: true, x: pt.x, y: pt.y });
+    }
+
+    if (sub === '/input/long-press' && req.method === 'POST') {
+      const rt = await requireRunningAdb(phoneId);
+      const body = await readJsonBody(req);
+      const pt = await resolveCoords(rt, body.x, body.y, Boolean(body.normalized));
+      await rt.adb.inputLongPress(pt.x, pt.y, body.durationMs);
+      return sendJson(res, 200, { ok: true, x: pt.x, y: pt.y });
+    }
+
+    if (sub === '/input/swipe' && req.method === 'POST') {
+      const rt = await requireRunningAdb(phoneId);
+      const body = await readJsonBody(req);
+      const p1 = await resolveCoords(rt, body.x1, body.y1, Boolean(body.normalized));
+      const p2 = await resolveCoords(rt, body.x2, body.y2, Boolean(body.normalized));
+      await rt.adb.inputSwipe(p1.x, p1.y, p2.x, p2.y, body.durationMs);
+      return sendJson(res, 200, { ok: true, from: p1, to: p2 });
+    }
+
+    if (sub === '/input/key' && req.method === 'POST') {
+      const rt = await requireRunningAdb(phoneId);
+      const body = await readJsonBody(req);
+      await rt.adb.inputKey(body.key ?? body.keycode);
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (sub === '/input/text' && req.method === 'POST') {
+      const rt = await requireRunningAdb(phoneId);
+      const body = await readJsonBody(req);
+      const text = String(body.text || '');
+      if (!text) return sendJson(res, 400, { error: 'text 不能为空' });
+
+      if (/^[\x20-\x7e]+$/.test(text)) {
+        if (rt.scrcpy?.isConnected) {
+          rt.scrcpy.sendText(text);
+        } else {
+          await rt.adb.inputAsciiText(text);
+        }
+      } else {
+        // Unicode / Chinese text via scrcpy clipboard-paste (auto-connects briefly if needed)
+        const scrcpy = phones._ensureScrcpyStarted(phoneId);
+        if (scrcpy && !scrcpy.isConnected) {
+          await new Promise((r) => setTimeout(r, 1200));
+        }
+        if (scrcpy?.isConnected) {
+          scrcpy.setClipboard(text, true);
+        } else {
+          throw Object.assign(new Error('输入中文需等待 scrcpy 控制通道就绪，请重试'), { statusCode: 503 });
+        }
+      }
+
+      if (body.enter) {
+        await new Promise((r) => setTimeout(r, 120));
+        await rt.adb.inputKey('enter');
+      }
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (sub === '/shell' && req.method === 'POST') {
+      const rt = await requireRunningAdb(phoneId, { wake: false });
+      const body = await readJsonBody(req);
+      const cmd = String(body.command || '').trim();
+      if (!cmd) return sendJson(res, 400, { error: 'command 不能为空' });
+      const timeout = Math.max(1000, Math.min(60000, Number(body.timeoutMs) || 15000));
+      const stdout = await rt.adb.shell(cmd, { timeout });
+      return sendJson(res, 200, { ok: true, stdout });
+    }
+
+    // --- Device Management & Files ---
+
     if (sub === '/apk/install' && req.method === 'POST') {
-      const rt = requireRunningAdb(phoneId);
+      const rt = await requireRunningAdb(phoneId, { wake: false });
       const rawName = decodeURIComponent(String(req.headers['x-filename'] || 'app.apk'));
       if (!rawName.toLowerCase().endsWith('.apk')) {
         return sendJson(res, 400, { error: '请上传 .apk 格式的安装包' });
@@ -492,32 +663,32 @@ export function createDroidCloudServer(options = {}) {
     }
 
     if (sub === '/apps' && req.method === 'GET') {
-      const rt = requireRunningAdb(phoneId);
+      const rt = await requireRunningAdb(phoneId, { wake: false });
       return sendJson(res, 200, await rt.adb.listApps());
     }
 
     if (sub === '/apps/launch' && req.method === 'POST') {
-      const rt = requireRunningAdb(phoneId);
+      const rt = await requireRunningAdb(phoneId);
       const body = await readJsonBody(req);
       await rt.adb.launchApp(body.packageName);
       return sendJson(res, 200, { ok: true });
     }
 
     if (sub === '/apps/uninstall' && req.method === 'POST') {
-      const rt = requireRunningAdb(phoneId);
+      const rt = await requireRunningAdb(phoneId, { wake: false });
       const body = await readJsonBody(req);
       const result = await rt.adb.uninstallApp(body.packageName);
       return sendJson(res, 200, { ok: true, result });
     }
 
     if (sub === '/files' && req.method === 'GET') {
-      const rt = requireRunningAdb(phoneId);
+      const rt = await requireRunningAdb(phoneId, { wake: false });
       const target = url.searchParams.get('path') || '/sdcard/Download';
       return sendJson(res, 200, await rt.adb.listFiles(target));
     }
 
     if (sub === '/files/upload' && req.method === 'POST') {
-      const rt = requireRunningAdb(phoneId);
+      const rt = await requireRunningAdb(phoneId, { wake: false });
       const targetDir = url.searchParams.get('path') || '/sdcard/Download';
       const rawName = decodeURIComponent(String(req.headers['x-filename'] || 'file.bin'));
       const uploaded = await streamBodyToTempFile(req, 'file');
@@ -530,7 +701,7 @@ export function createDroidCloudServer(options = {}) {
     }
 
     if (sub === '/files/download' && req.method === 'GET') {
-      const rt = requireRunningAdb(phoneId);
+      const rt = await requireRunningAdb(phoneId, { wake: false });
       const target = url.searchParams.get('path');
       if (!target) return sendJson(res, 400, { error: '缺少 path 参数' });
       const pulled = await rt.adb.pullToTempFile(target);
@@ -548,7 +719,7 @@ export function createDroidCloudServer(options = {}) {
     }
 
     if (sub === '/files' && req.method === 'DELETE') {
-      const rt = requireRunningAdb(phoneId);
+      const rt = await requireRunningAdb(phoneId, { wake: false });
       const target = url.searchParams.get('path');
       if (!target) return sendJson(res, 400, { error: '缺少 path 参数' });
       await rt.adb.deleteFile(target);
@@ -556,15 +727,16 @@ export function createDroidCloudServer(options = {}) {
     }
 
     if (sub === '/location' && req.method === 'POST') {
-      const rt = requireRunningAdb(phoneId);
+      const rt = await requireRunningAdb(phoneId, { wake: false });
       const body = await readJsonBody(req);
       await rt.adb.setLocation(body.lon, body.lat);
       return sendJson(res, 200, { ok: true });
     }
 
     if (sub === '/reconnect-stream' && req.method === 'POST') {
-      const rt = requireRunningAdb(phoneId);
-      if (rt.scrcpy) await rt.scrcpy.restart();
+      const rt = await requireRunningAdb(phoneId);
+      const scrcpy = phones._ensureScrcpyStarted(phoneId);
+      if (scrcpy) await scrcpy.restart();
       return sendJson(res, 200, { ok: true });
     }
 
@@ -656,7 +828,6 @@ export function createDroidCloudServer(options = {}) {
     }, 3000);
     metricsTimer.unref?.();
 
-    // Optional: auto-start a specific phone if user explicitly sets AUTO_START_PHONE=<id|first>
     const autoStart = String(process.env.AUTO_START_PHONE || '').trim();
     if (autoStart) {
       const list = phones.listPhones();
@@ -697,7 +868,7 @@ if (isMain) {
   srv.listen().then((addr) => {
     const port = typeof addr === 'object' && addr ? addr.port : process.env.PORT || 6080;
     console.log(`[droidcloud] 多机云手机控制台已启动: http://0.0.0.0:${port}`);
-    console.log('[droidcloud] 默认按需开机模式：所有云手机初始关机（零 CPU/内存占用），登录网页按需开启');
+    console.log('[droidcloud] 默认按需开机模式：所有云手机初始关机（零 CPU/内存占用），登录网页或调用 API 按需开启');
     if (srv.auth.generated) {
       console.log('============================================================');
       console.log(`[droidcloud] 未设置 ACCESS_PASSWORD，已自动生成访问密码:`);

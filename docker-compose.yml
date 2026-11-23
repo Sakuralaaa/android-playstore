@@ -8,11 +8,13 @@ services:
     environment:
       # Web 控制台登录密码（兼容旧 VNC_PASSWORD；若留空则自动生成并打印在容器日志里）
       ACCESS_PASSWORD: "${ACCESS_PASSWORD:-change-me-please}"
+      # 可选：固定外部自动化 / AI Agent 调用的 API Token（留空则自动生成并可在网页「开放 API」查看）
+      # API_TOKEN: "dc_your_custom_token_here"
       # 以下为新建云手机时的默认参数，每台云手机都可在网页中独立配置版本、型号、语言、代理与自动关机
       ANDROID_VERSION: "${ANDROID_VERSION:-16}"
       DEVICE: "${DEVICE:-pixel_8}"
-      RAM_MB: "${RAM_MB:-4096}"
-      CORES: "${CORES:-4}"
+      RAM_MB: "${RAM_MB:-3072}"
+      CORES: "${CORES:-3}"
       DATA_SIZE: "${DATA_SIZE:-16G}"
       SCREEN_PRESET: "${SCREEN_PRESET:-balanced}"      # smooth | balanced | hd
       STREAM_PRESET: "${STREAM_PRESET:-balanced}"      # smooth | balanced | ultra

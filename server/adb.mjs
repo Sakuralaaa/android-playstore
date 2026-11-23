@@ -19,6 +19,34 @@ const FEATURED_GOOGLE_APPS = [
   { packageName: 'com.android.settings', label: '系统设置', category: 'system' },
 ];
 
+export const NAMED_KEYCODES = {
+  home: 3,
+  back: 4,
+  call: 5,
+  endcall: 6,
+  up: 19,
+  down: 20,
+  left: 21,
+  right: 22,
+  center: 23,
+  vol_up: 24,
+  vol_down: 25,
+  power: 26,
+  camera: 27,
+  tab: 61,
+  space: 62,
+  enter: 66,
+  delete: 67,
+  backspace: 67,
+  menu: 82,
+  search: 84,
+  escape: 111,
+  recents: 187,
+  sleep: 223,
+  wakeup: 224,
+  paste: 279,
+};
+
 export function sanitizeSdcardPath(inputPath = '/sdcard/Download') {
   let raw = String(inputPath || '/sdcard/Download').trim().replace(/\\/g, '/');
   if (!raw.startsWith('/')) raw = `/sdcard/${raw}`;
@@ -34,6 +62,64 @@ export function validatePackageName(pkg) {
     throw new Error('非法的应用包名');
   }
   return pkg;
+}
+
+function unescapeXml(str = '') {
+  return str
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+export function parseUiHierarchyXml(xml) {
+  const elements = [];
+  const nodeRe = /<node\s+([^>]+?)\/?>/g;
+  let match;
+  let index = 0;
+
+  while ((match = nodeRe.exec(xml)) !== null) {
+    const attrStr = match[1];
+    const attrs = {};
+    const attrRe = /([\w-]+)="([^"]*)"/g;
+    let am;
+    while ((am = attrRe.exec(attrStr)) !== null) {
+      attrs[am[1]] = unescapeXml(am[2]);
+    }
+
+    const boundsMatch = (attrs.bounds || '').match(/^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$/);
+    if (!boundsMatch) continue;
+    const x1 = Number(boundsMatch[1]);
+    const y1 = Number(boundsMatch[2]);
+    const x2 = Number(boundsMatch[3]);
+    const y2 = Number(boundsMatch[4]);
+    const clickable = attrs.clickable === 'true';
+    const editable = attrs.class?.includes('EditText') || attrs['editable'] === 'true';
+    const text = attrs.text || '';
+    const contentDesc = attrs['content-desc'] || '';
+    const resourceId = attrs['resource-id'] || '';
+
+    // Filter to actionable or informative nodes so AI agents get a crisp, low-token tree
+    if (!text && !contentDesc && !clickable && !editable && !resourceId) continue;
+    if (x2 <= x1 || y2 <= y1) continue;
+
+    elements.push({
+      id: index++,
+      text,
+      contentDesc,
+      resourceId,
+      className: (attrs.class || '').split('.').pop() || '',
+      clickable,
+      editable,
+      enabled: attrs.enabled !== 'false',
+      focused: attrs.focused === 'true',
+      bounds: { x1, y1, x2, y2 },
+      center: { x: Math.round((x1 + x2) / 2), y: Math.round((y1 + y2) / 2) },
+    });
+  }
+
+  return elements;
 }
 
 export class AdbClient {
@@ -117,6 +203,81 @@ export class AdbClient {
         serial: this.serial,
       };
     }
+  }
+
+  async getScreenInfo() {
+    const out = await this.shell(
+      'wm size; echo "---"; dumpsys window displays | grep -m1 "mCurrentFocus" || dumpsys activity activities | grep -m1 "ResumedActivity" || true',
+      { timeout: 6000 }
+    );
+    const [sizeRaw = '', focusRaw = ''] = out.split('---');
+    const sizeMatch = sizeRaw.match(/(\d+)x(\d+)/g);
+    const lastSize = sizeMatch ? sizeMatch[sizeMatch.length - 1] : '720x1600';
+    const [width, height] = lastSize.split('x').map(Number);
+    return {
+      width: width || 720,
+      height: height || 1600,
+      focusedWindow: focusRaw.trim(),
+    };
+  }
+
+  async getUiTree({ includeXml = false } = {}) {
+    const remoteXml = '/data/local/tmp/droidcloud-ui.xml';
+    await this.shell(`uiautomator dump ${remoteXml} >/dev/null 2>&1`, { timeout: 15000 });
+    const xml = await this.shell(`cat ${remoteXml}`, { timeout: 10000, maxBuffer: 8 * 1024 * 1024 });
+    const elements = parseUiHierarchyXml(xml);
+    return includeXml ? { elements, xml } : { elements };
+  }
+
+  async inputTap(x, y) {
+    const ix = Math.max(0, Math.round(Number(x)));
+    const iy = Math.max(0, Math.round(Number(y)));
+    await this.shell(`input tap ${ix} ${iy}`, { timeout: 8000 });
+  }
+
+  async inputLongPress(x, y, durationMs = 800) {
+    const ix = Math.max(0, Math.round(Number(x)));
+    const iy = Math.max(0, Math.round(Number(y)));
+    const d = Math.max(200, Math.min(5000, Math.round(Number(durationMs) || 800)));
+    await this.shell(`input swipe ${ix} ${iy} ${ix} ${iy} ${d}`, { timeout: 10000 });
+  }
+
+  async inputSwipe(x1, y1, x2, y2, durationMs = 300) {
+    const a = Math.max(0, Math.round(Number(x1)));
+    const b = Math.max(0, Math.round(Number(y1)));
+    const c = Math.max(0, Math.round(Number(x2)));
+    const d = Math.max(0, Math.round(Number(y2)));
+    const ms = Math.max(50, Math.min(5000, Math.round(Number(durationMs) || 300)));
+    await this.shell(`input swipe ${a} ${b} ${c} ${d} ${ms}`, { timeout: 10000 });
+  }
+
+  async inputKey(keycodeOrName) {
+    let code;
+    if (typeof keycodeOrName === 'string' && NAMED_KEYCODES[keycodeOrName.toLowerCase()] !== undefined) {
+      code = NAMED_KEYCODES[keycodeOrName.toLowerCase()];
+    } else {
+      code = Number(keycodeOrName);
+    }
+    if (!Number.isInteger(code) || code < 0 || code > 1000) {
+      throw new Error('无效的按键码');
+    }
+    await this.shell(`input keyevent ${code}`, { timeout: 8000 });
+  }
+
+  async inputAsciiText(text) {
+    const escaped = String(text)
+      .replace(/\\/g, '\\\\')
+      .replace(/ /g, '%s')
+      .replace(/(['"`$&|;<>()!])/g, '\\$1');
+    await this.shell(`input text "${escaped}"`, { timeout: 10000 });
+  }
+
+  async wakeScreen() {
+    await this.shell('input keyevent 224; wm dismiss-keyguard', { timeout: 6000 }).catch(() => {});
+  }
+
+  async sleepScreen() {
+    await this.shell('input keyevent 223', { timeout: 6000 }).catch(() => {});
   }
 
   async screenshot() {
@@ -210,7 +371,6 @@ export class AdbClient {
     for (const line of out.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('total ')) continue;
-      // Toybox ls -la: drwxrwx--- 2 u0_a123 media_rw 4096 2026-11-23 12:00 filename
       const m = trimmed.match(
         /^([dlcbps-])[\w-]{9}\+?\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s+(.+)$/
       );
@@ -247,7 +407,6 @@ export class AdbClient {
     const escapedDir = `'${safeDir.replace(/'/g, "'\\''")}'`;
     await this.shell(`mkdir -p ${escapedDir}`, { timeout: 5000 }).catch(() => {});
     await this.run(['push', localPath, remotePath], { timeout: 120000 });
-    // Trigger Android media scanner so uploaded images/videos appear in Gallery immediately
     const escapedFile = `'file://${remotePath.replace(/'/g, "'\\''")}'`;
     await this.shell(
       `am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d ${escapedFile}`,

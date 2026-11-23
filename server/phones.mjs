@@ -59,14 +59,15 @@ function sanitizePhoneConfig(input, existing = null) {
   const streamRaw = String(input.streamPreset ?? existing?.streamPreset ?? process.env.STREAM_PRESET ?? 'balanced');
   const streamPreset = QUALITY_PRESETS[streamRaw] ? streamRaw : 'balanced';
 
-  const ramMb = Math.max(2048, Math.min(8192, Number(input.ramMb ?? existing?.ramMb ?? process.env.RAM_MB ?? 4096) || 4096));
-  const cores = Math.max(1, Math.min(8, Number(input.cores ?? existing?.cores ?? process.env.CORES ?? 4) || 4));
+  const ramMb = Math.max(2048, Math.min(8192, Number(input.ramMb ?? existing?.ramMb ?? process.env.RAM_MB ?? 3072) || 3072));
+  const cores = Math.max(1, Math.min(8, Number(input.cores ?? existing?.cores ?? process.env.CORES ?? 3) || 3));
   const dataSizeRaw = String(input.dataSize ?? existing?.dataSize ?? process.env.DATA_SIZE ?? '16G').trim();
   const dataSize = /^\d+[GM]$/i.test(dataSizeRaw) ? dataSizeRaw.toUpperCase() : '16G';
 
   const localeMode = String(input.localeMode ?? existing?.localeMode ?? 'zh-CN');
   const customLocale = String(input.customLocale ?? existing?.customLocale ?? '').trim();
   const autoIpEnv = input.autoIpEnv !== undefined ? Boolean(input.autoIpEnv) : (existing?.autoIpEnv ?? true);
+  const ecoMode = input.ecoMode !== undefined ? Boolean(input.ecoMode) : (existing?.ecoMode ?? true);
   const httpProxy = String(input.httpProxy ?? existing?.httpProxy ?? process.env.HTTP_PROXY_URL ?? '').trim();
   const rawDns = String(input.dnsServers ?? existing?.dnsServers ?? process.env.DNS_SERVERS ?? '8.8.8.8').trim();
   // netsimd in Emulator 35-37 can break on comma-separated --host-dns lists; keep a single IP or 'auto'
@@ -87,6 +88,7 @@ function sanitizePhoneConfig(input, existing = null) {
     localeMode,
     customLocale,
     autoIpEnv,
+    ecoMode,
     httpProxy,
     dnsServers,
     idleStopMinutes,
@@ -127,7 +129,7 @@ export class PhoneManager extends EventEmitter {
 
   startBackgroundWatchers() {
     if (this._idleTimer) return;
-    this._idleTimer = setInterval(() => this._checkIdleAutoStop(), 30_000);
+    this._idleTimer = setInterval(() => this._checkIdleAndEco(), 15_000);
     this._idleTimer.unref?.();
   }
 
@@ -255,6 +257,7 @@ export class PhoneManager extends EventEmitter {
         scrcpy: null,
         viewers: new Set(),
         lastActiveAt: Date.now(),
+        screenAsleep: false,
         resolvedTz: null,
         resolvedLocale: null,
         geo: this.phones.get(id)?.lastGeo || null,
@@ -384,6 +387,10 @@ export class PhoneManager extends EventEmitter {
     if (!rt) return;
     rt.viewers.add(wsClient);
     rt.lastActiveAt = Date.now();
+    if (rt.status === 'running') {
+      this.ensureAwake(id).catch(() => {});
+      this._ensureScrcpyStarted(id);
+    }
     this._emitPhonesChanged();
   }
 
@@ -392,6 +399,52 @@ export class PhoneManager extends EventEmitter {
     if (!rt) return;
     rt.viewers.delete(wsClient);
     rt.lastActiveAt = Date.now();
+    this._emitPhonesChanged();
+  }
+
+  async ensureAwake(id) {
+    const rt = this.runtimes.get(id);
+    if (!rt || rt.status !== 'running' || !rt.adb) return;
+    rt.lastActiveAt = Date.now();
+    if (rt.screenAsleep) {
+      rt.screenAsleep = false;
+      await rt.adb.wakeScreen();
+      this._log(id, '[节能] 已唤醒屏幕');
+    }
+  }
+
+  _ensureScrcpyStarted(id) {
+    const cfg = this.phones.get(id);
+    const rt = this.runtimes.get(id);
+    if (!cfg || !rt || rt.status !== 'running' || !rt.adb) return null;
+    if (rt.scrcpy) {
+      if (!rt.scrcpy.isConnected) rt.scrcpy.start();
+      return rt.scrcpy;
+    }
+    const scrcpy = new ScrcpyManager({
+      adb: rt.adb,
+      serverJarPath: this.scrcpyServerPath,
+      localPort: rt.scrcpyPort,
+      preset: cfg.streamPreset,
+    });
+    rt.scrcpy = scrcpy;
+
+    scrcpy.on('meta', (meta) => this.emit('phone_video_meta', { id, meta }));
+    scrcpy.on('frame', (payload) => this.emit('phone_video_frame', { id, ...payload }));
+    scrcpy.on('clipboard', (text) => this.emit('phone_clipboard', { id, text }));
+    scrcpy.on('log', (line) => this._log(id, line));
+    scrcpy.on('connected', () => this._emitPhonesChanged());
+    scrcpy.on('disconnected', () => this._emitPhonesChanged());
+
+    scrcpy.start();
+    return scrcpy;
+  }
+
+  _pauseScrcpy(id) {
+    const rt = this.runtimes.get(id);
+    if (!rt || !rt.scrcpy) return;
+    rt.scrcpy.stop();
+    rt.scrcpy = null;
     this._emitPhonesChanged();
   }
 
@@ -596,6 +649,17 @@ export class PhoneManager extends EventEmitter {
         'hw.battery',
         'fastboot.forceFastBoot',
         'PlayStore.enabled',
+        'hw.camera.back',
+        'hw.camera.front',
+        'hw.audioInput',
+        'hw.audioOutput',
+        'hw.sensors.proximity',
+        'hw.sensors.magnetic_field',
+        'hw.sensors.temperature',
+        'hw.sensors.light',
+        'hw.sensors.pressure',
+        'hw.sensors.humidity',
+        'vm.heapSize',
       ];
       const filtered = text
         .split('\n')
@@ -614,6 +678,17 @@ export class PhoneManager extends EventEmitter {
         'hw.gps=yes',
         'hw.sensors.orientation=yes',
         'hw.battery=yes',
+        'hw.camera.back=none',
+        'hw.camera.front=none',
+        'hw.audioInput=no',
+        'hw.audioOutput=no',
+        'hw.sensors.proximity=no',
+        'hw.sensors.magnetic_field=no',
+        'hw.sensors.temperature=no',
+        'hw.sensors.light=no',
+        'hw.sensors.pressure=no',
+        'hw.sensors.humidity=no',
+        'vm.heapSize=256',
         'fastboot.forceFastBoot=yes',
         'PlayStore.enabled=true',
       ].join('\n');
@@ -821,6 +896,7 @@ export class PhoneManager extends EventEmitter {
     await adb.shell('svc power stayon true').catch(() => {});
     await adb.shell('svc wifi enable').catch(() => {});
     await adb.shell('settings put global auto_time 1').catch(() => {});
+    await adb.shell('settings put global cached_apps_freezer enabled').catch(() => {});
     await adb.shell(`settings put global window_animation_scale ${this.animationScale}`).catch(() => {});
     await adb.shell(`settings put global transition_animation_scale ${this.animationScale}`).catch(() => {});
     await adb.shell(`settings put global animator_duration_scale ${this.animationScale}`).catch(() => {});
@@ -831,25 +907,8 @@ export class PhoneManager extends EventEmitter {
       this._log(id, `已同步出口 IP 定位: ${geo.city || geo.country} (${geo.lat.toFixed(4)}, ${geo.lon.toFixed(4)})`);
     }
 
-    // Start dedicated scrcpy video/control stream
-    const scrcpy = new ScrcpyManager({
-      adb,
-      serverJarPath: this.scrcpyServerPath,
-      localPort: scrcpyPort,
-      preset: cfg.streamPreset,
-    });
-    rt.scrcpy = scrcpy;
-
-    scrcpy.on('meta', (meta) => this.emit('phone_video_meta', { id, meta }));
-    scrcpy.on('frame', (payload) => this.emit('phone_video_frame', { id, ...payload }));
-    scrcpy.on('clipboard', (text) => this.emit('phone_clipboard', { id, text }));
-    scrcpy.on('log', (line) => this._log(id, line));
-    scrcpy.on('connected', () => this._emitPhonesChanged());
-    scrcpy.on('disconnected', () => this._emitPhonesChanged());
-
-    scrcpy.start();
-
     rt.lastActiveAt = Date.now();
+    rt.screenAsleep = false;
     this._setProgress(id, {
       status: 'running',
       stage: 'ready',
@@ -857,7 +916,11 @@ export class PhoneManager extends EventEmitter {
       message: '云手机运行中',
       error: null,
     });
-    this._log(id, '云手机已就绪，可以点击「进入屏幕」开始操作！');
+    // Only start video encoder immediately if a viewer is already waiting; otherwise save CPU until viewed!
+    if (rt.viewers.size > 0) {
+      this._ensureScrcpyStarted(id);
+    }
+    this._log(id, '云手机已就绪（无画面连接时自动暂停视频编码以节省 CPU）');
   }
 
   async syncPhoneIpNow(id) {
@@ -987,18 +1050,34 @@ export class PhoneManager extends EventEmitter {
     rt.scrcpyPort = null;
   }
 
-  _checkIdleAutoStop() {
+  _checkIdleAndEco() {
     const now = Date.now();
     for (const [id, cfg] of this.phones.entries()) {
       const rt = this.runtimes.get(id);
       if (!rt || rt.status !== 'running') continue;
-      if (!cfg.idleStopMinutes || cfg.idleStopMinutes <= 0) continue;
+
       if (rt.viewers.size > 0) {
         rt.lastActiveAt = now;
         continue;
       }
+
       const idleMs = now - rt.lastActiveAt;
-      if (idleMs >= cfg.idleStopMinutes * 60_000) {
+
+      // 1) After 15s with no viewer & no API activity: stop scrcpy video encoder & sleep virtual screen to slash CPU
+      if (idleMs >= 15_000) {
+        if (rt.scrcpy) {
+          this._pauseScrcpy(id);
+          this._log(id, '[节能] 无观看连接，已暂停 H.264 编码释放 CPU');
+        }
+        if (cfg.ecoMode !== false && !rt.screenAsleep && rt.adb) {
+          rt.screenAsleep = true;
+          rt.adb.sleepScreen().catch(() => {});
+          this._log(id, '[节能] 虚拟屏幕已息屏省电，打开画面或调用 API 时自动毫秒唤醒');
+        }
+      }
+
+      // 2) Full graceful shutdown after idleStopMinutes
+      if (cfg.idleStopMinutes > 0 && idleMs >= cfg.idleStopMinutes * 60_000) {
         this._log(id, `[自动节能] 已空闲 ${cfg.idleStopMinutes} 分钟无连接，自动安全关机释放资源`);
         this.stopPhone(id).catch(() => {});
       }

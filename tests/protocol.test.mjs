@@ -7,7 +7,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 
 import { AuthManager } from '../server/auth.mjs';
-import { sanitizeSdcardPath, validatePackageName } from '../server/adb.mjs';
+import { sanitizeSdcardPath, validatePackageName, parseUiHierarchyXml } from '../server/adb.mjs';
 import { localeForCountry, resolvePhoneLocale } from '../server/geo.mjs';
 import {
   ScrcpyVideoParser,
@@ -72,6 +72,12 @@ test('ADB path & package validators block traversal and injection', () => {
   assert.equal(validatePackageName('com.android.vending'), 'com.android.vending');
   assert.throws(() => validatePackageName('com.foo; rm -rf /'));
   assert.throws(() => validatePackageName('../bad'));
+
+  const sampleXml = `<hierarchy><node text="Sign in" resource-id="com.google:id/btn" class="android.widget.Button" clickable="true" enabled="true" bounds="[100,200][300,260]" /><node text="" class="android.view.View" clickable="false" bounds="[0,0][720,1600]" /></hierarchy>`;
+  const nodes = parseUiHierarchyXml(sampleXml);
+  assert.equal(nodes.length, 1);
+  assert.equal(nodes[0].text, 'Sign in');
+  assert.deepEqual(nodes[0].center, { x: 200, y: 230 });
 });
 
 test('scrcpy v5.0.1 control encoders produce exact wire bytes', () => {
@@ -206,8 +212,20 @@ test('End-to-end Multi-Phone Fleet CRUD + Auth + WebSocket overview', async () =
     assert.equal(health.totalPhones, 1);
     assert.equal(health.runningPhones, 0);
 
-    // 2. Unauthenticated blocked
+    // 2. Unauthenticated blocked; Bearer API Token works directly for AI/script access
     assert.equal((await fetch(`${baseUrl}/api/phones`)).status, 401);
+    const apiTok = srv.auth.apiToken;
+    const docsRes = await fetch(`${baseUrl}/api/docs`, {
+      headers: { Authorization: `Bearer ${apiTok}` },
+    });
+    assert.equal(docsRes.status, 200);
+    const docsJson = await docsRes.json();
+    assert.ok(Array.isArray(docsJson.endpoints) && docsJson.endpoints.length >= 10);
+
+    const v1Phones = await fetch(`${baseUrl}/api/v1/phones`, {
+      headers: { 'X-API-Key': apiTok },
+    });
+    assert.equal(v1Phones.status, 200);
 
     // 3. Login
     const login = await fetch(`${baseUrl}/api/auth/login`, {
