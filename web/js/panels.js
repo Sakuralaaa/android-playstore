@@ -1,4 +1,4 @@
-// Slide-over drawer panels: Apps, APK Installer, File Manager, Mock GPS, Clipboard, System & Logs
+// Per-phone slide-over drawer panels: Apps, APK Installer, File Manager, GPS/IP Sync, Clipboard, System & Logs
 
 const GPS_PRESETS = [
   { name: '美国 · 洛杉矶', lon: -118.2437, lat: 34.0522 },
@@ -6,7 +6,7 @@ const GPS_PRESETS = [
   { name: '日本 · 东京', lon: 139.6917, lat: 35.6895 },
   { name: '新加坡', lon: 103.8198, lat: 1.3521 },
   { name: '英国 · 伦敦', lon: -0.1276, lat: 51.5072 },
-  { name: '中国 · 香港', lon: 114.1694, lat: 22.3193 },
+  { name: '西班牙 · 马德里', lon: -3.7038, lat: 40.4168 },
 ];
 
 function escapeHtml(s) {
@@ -40,6 +40,11 @@ export class DrawerController {
     closeBtn.addEventListener('click', () => this.close());
   }
 
+  _base() {
+    const id = this.getState().activePhoneId;
+    return `/api/phones/${encodeURIComponent(id)}`;
+  }
+
   toggle(tab) {
     if (this.activeTab === tab && !this.drawerEl.classList.contains('hidden')) {
       this.close();
@@ -70,11 +75,12 @@ export class DrawerController {
   }
 
   async render() {
+    if (!this.getState().activePhoneId) return;
     const titles = {
       apps: '应用管理 & Google 生态',
       apk: '安装 APK 安装包',
       files: '手机文件传输',
-      location: '虚拟 GPS 定位',
+      location: '虚拟定位 & 出口 IP 同步',
       clipboard: '双向剪贴板',
       system: '系统状态 & 日志',
     };
@@ -101,7 +107,7 @@ export class DrawerController {
   async _renderApps() {
     this.bodyEl.innerHTML = '<div class="muted">正在读取已安装应用…</div>';
     try {
-      const data = await this.api('/api/apps');
+      const data = await this.api(`${this._base()}/apps`);
       const featuredHtml = (data.featured || [])
         .map(
           (a) => `
@@ -149,7 +155,7 @@ export class DrawerController {
         el.addEventListener('click', async () => {
           const pkg = el.dataset.launch;
           try {
-            await this.api('/api/apps/launch', { method: 'POST', body: { packageName: pkg } });
+            await this.api(`${this._base()}/apps/launch`, { method: 'POST', body: { packageName: pkg } });
             this.toast(`已启动 ${pkg}`, 'success');
           } catch (err) {
             this.toast(err.message, 'error');
@@ -162,7 +168,7 @@ export class DrawerController {
           const pkg = el.dataset.uninstall;
           if (!confirm(`确定要卸载 ${pkg} 吗？`)) return;
           try {
-            await this.api('/api/apps/uninstall', { method: 'POST', body: { packageName: pkg } });
+            await this.api(`${this._base()}/apps/uninstall`, { method: 'POST', body: { packageName: pkg } });
             this.toast(`已卸载 ${pkg}`, 'success');
             this._renderApps();
           } catch (err) {
@@ -182,7 +188,7 @@ export class DrawerController {
         <p class="muted small">支持覆盖安装，最大 512 MB</p>
         <input type="file" id="apk-file-input" accept=".apk" class="hidden" />
       </div>
-      <div id="apk-status" class="muted small">提示：你也可以直接把 .apk 文件拖到浏览器窗口任意位置快速安装。</div>
+      <div id="apk-status" class="muted small">提示：也可以直接把 .apk 文件拖到浏览器窗口任意位置安装到当前云手机。</div>
     `;
     const zone = this.bodyEl.querySelector('#apk-drop-zone');
     const input = this.bodyEl.querySelector('#apk-file-input');
@@ -209,7 +215,7 @@ export class DrawerController {
     this.toast(`正在上传并安装 ${file.name}…`);
 
     try {
-      const resp = await fetch('/api/apk/install', {
+      const resp = await fetch(`${this._base()}/apk/install`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/octet-stream',
@@ -230,7 +236,7 @@ export class DrawerController {
   async _renderFiles() {
     this.bodyEl.innerHTML = '<div class="muted">正在加载文件列表…</div>';
     try {
-      const data = await this.api(`/api/files?path=${encodeURIComponent(this.currentDir)}`);
+      const data = await this.api(`${this._base()}/files?path=${encodeURIComponent(this.currentDir)}`);
       this.currentDir = data.path;
       const parentDir =
         this.currentDir === '/sdcard'
@@ -241,7 +247,7 @@ export class DrawerController {
         .map((f) => {
           const actions = f.isDir
             ? `<button class="btn btn-subtle btn-sm" data-open-dir="${escapeHtml(f.path)}">打开</button>`
-            : `<a class="btn btn-subtle btn-sm" href="/api/files/download?path=${encodeURIComponent(f.path)}" download>下载</a>`;
+            : `<a class="btn btn-subtle btn-sm" href="${this._base()}/files/download?path=${encodeURIComponent(f.path)}" download>下载</a>`;
           return `
             <div class="list-item">
               <div class="list-item-main">
@@ -295,7 +301,7 @@ export class DrawerController {
           const p = el.dataset.delFile;
           if (!confirm(`确定删除 ${p} 吗？`)) return;
           try {
-            await this.api(`/api/files?path=${encodeURIComponent(p)}`, { method: 'DELETE' });
+            await this.api(`${this._base()}/files?path=${encodeURIComponent(p)}`, { method: 'DELETE' });
             this.toast('已删除', 'success');
             this._renderFiles();
           } catch (err) {
@@ -311,7 +317,7 @@ export class DrawerController {
   async uploadFileToPhone(file, targetDir = '/sdcard/Download') {
     this.toast(`正在上传 ${file.name} 到手机…`);
     try {
-      const resp = await fetch(`/api/files/upload?path=${encodeURIComponent(targetDir)}`, {
+      const resp = await fetch(`${this._base()}/files/upload?path=${encodeURIComponent(targetDir)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/octet-stream',
@@ -328,6 +334,13 @@ export class DrawerController {
   }
 
   _renderLocation() {
+    const phone = this.getState().activePhone;
+    const geo = phone?.geo;
+
+    const geoSummary = geo
+      ? `${geo.countryCode} ${geo.city || ''} · ${geo.timezone} (${geo.lat?.toFixed(4)}, ${geo.lon?.toFixed(4)})`
+      : '尚未检测出口 IP';
+
     const presetButtons = GPS_PRESETS.map(
       (p) =>
         `<button class="app-tile" data-lon="${p.lon}" data-lat="${p.lat}">
@@ -339,6 +352,11 @@ export class DrawerController {
     ).join('');
 
     this.bodyEl.innerHTML = `
+      <div class="metric-box">
+        <div class="metric-label">当前检测出口 IP 归属</div>
+        <div class="small" style="margin:5px 0 10px;font-family:var(--font-mono)">${escapeHtml(geoSummary)}</div>
+        <button id="gps-sync-ip-btn" class="btn btn-emerald btn-sm btn-block">按当前出口 IP 一键同步 GPS</button>
+      </div>
       <div>
         <div class="section-label">常用地区一键定位</div>
         <div class="apps-grid">${presetButtons}</div>
@@ -353,9 +371,19 @@ export class DrawerController {
       </div>
     `;
 
+    this.bodyEl.querySelector('#gps-sync-ip-btn').addEventListener('click', async () => {
+      try {
+        const res = await this.api(`${this._base()}/sync-ip`, { method: 'POST' });
+        this.toast(`已同步至 ${res.geo.countryCode} ${res.geo.city || ''}`, 'success');
+        this._renderLocation();
+      } catch (err) {
+        this.toast(err.message, 'error');
+      }
+    });
+
     const applyGps = async (lon, lat, label = '') => {
       try {
-        await this.api('/api/device/location', { method: 'POST', body: { lon, lat } });
+        await this.api(`${this._base()}/location`, { method: 'POST', body: { lon, lat } });
         this.toast(`GPS 已更新${label ? `：${label}` : ''}`, 'success');
       } catch (err) {
         this.toast(err.message, 'error');
@@ -419,41 +447,43 @@ export class DrawerController {
 
   async _renderSystem() {
     const st = this.getState();
+    const phone = st.activePhone || {};
     const m = st.metrics || {};
-    const info = st.deviceInfo || {};
 
     this.bodyEl.innerHTML = `
       <div class="metrics-grid">
-        <div class="metric-box"><div class="metric-label">CPU 占用</div><div class="metric-val">${m.cpuPercent ?? '--'}%</div></div>
-        <div class="metric-box"><div class="metric-label">内存使用</div><div class="metric-val">${m.memUsedMb ? `${(m.memUsedMb / 1024).toFixed(1)}G` : '--'}</div></div>
-        <div class="metric-box"><div class="metric-label">视频码率</div><div class="metric-val">${m.streamBitrateKbps ? `${(m.streamBitrateKbps / 1000).toFixed(1)} Mbps` : '--'}</div></div>
+        <div class="metric-box"><div class="metric-label">宿主机 CPU</div><div class="metric-val">${m.cpuPercent ?? '--'}%</div></div>
+        <div class="metric-box"><div class="metric-label">宿主机内存</div><div class="metric-val">${m.memUsedMb ? `${(m.memUsedMb / 1024).toFixed(1)}G` : '--'}</div></div>
+        <div class="metric-box"><div class="metric-label">视频码率</div><div class="metric-val">${phone.bitrateKbps ? `${(phone.bitrateKbps / 1000).toFixed(1)} Mbps` : '--'}</div></div>
         <div class="metric-box"><div class="metric-label">解码引擎</div><div class="metric-val">${escapeHtml(st.decoderEngine || '--')}</div></div>
       </div>
 
       <div>
-        <div class="section-label">设备信息</div>
+        <div class="section-label">当前云手机环境</div>
         <div class="kv-list">
-          <div class="kv-row"><span>设备型号</span><span>${escapeHtml(info.model || st.videoMeta?.deviceName || 'Pixel Cloud')}</span></div>
-          <div class="kv-row"><span>Android 版本</span><span>Android ${escapeHtml(info.androidRelease || st.androidVersion || '16')}</span></div>
+          <div class="kv-row"><span>机型 / 版本</span><span>${escapeHtml(phone.device || '--')} · Android ${escapeHtml(phone.androidVersion || '--')}</span></div>
+          <div class="kv-row"><span>系统语言</span><span>${escapeHtml(phone.resolvedLocale || phone.localeMode || 'zh-CN')}</span></div>
+          <div class="kv-row"><span>同步时区</span><span>${escapeHtml(phone.resolvedTz || phone.geo?.timezone || '--')}</span></div>
+          <div class="kv-row"><span>出口 IP</span><span>${escapeHtml(phone.geo ? `${phone.geo.ip} (${phone.geo.countryCode})` : '未检测')}</span></div>
           <div class="kv-row"><span>视频流分辨率</span><span>${st.videoMeta?.width || 0} × ${st.videoMeta?.height || 0}</span></div>
-          <div class="kv-row"><span>磁盘占用</span><span>${m.diskUsedGb ?? '--'} / ${m.diskTotalGb ?? '--'} GB</span></div>
+          <div class="kv-row"><span>空闲自动关机</span><span>${phone.idleStopMinutes > 0 ? `${phone.idleStopMinutes} 分钟` : '已关闭'}</span></div>
         </div>
       </div>
 
       <div class="btn-group">
         <button id="sys-reconnect-btn" class="btn btn-subtle btn-sm" style="flex:1">重连视频流</button>
-        <button id="sys-reboot-btn" class="btn btn-danger btn-sm" style="flex:1">重启 Android</button>
+        <button id="sys-reboot-btn" class="btn btn-danger btn-sm" style="flex:1">重启此手机</button>
       </div>
 
       <div class="terminal-box">
         <div class="terminal-header"><span>运行日志</span></div>
-        <pre class="terminal-body" style="height:200px">${escapeHtml((st.logs || []).slice(-60).join('\n'))}</pre>
+        <pre class="terminal-body" style="height:190px">${escapeHtml((st.logs || []).slice(-60).join('\n'))}</pre>
       </div>
     `;
 
     this.bodyEl.querySelector('#sys-reconnect-btn').addEventListener('click', async () => {
       try {
-        await this.api('/api/device/reconnect-stream', { method: 'POST' });
+        await this.api(`${this._base()}/reconnect-stream`, { method: 'POST' });
         this.toast('正在重新建立视频流…');
       } catch (err) {
         this.toast(err.message, 'error');
@@ -461,10 +491,10 @@ export class DrawerController {
     });
 
     this.bodyEl.querySelector('#sys-reboot-btn').addEventListener('click', async () => {
-      if (!confirm('确定要重启 Android 系统吗？')) return;
+      if (!confirm('确定要重启这台云手机吗？')) return;
       try {
-        await this.api('/api/device/reboot', { method: 'POST' });
-        this.toast('已发送重启指令');
+        await this.api(`${this._base()}/reboot`, { method: 'POST' });
+        this.toast('正在重启云手机…');
       } catch (err) {
         this.toast(err.message, 'error');
       }

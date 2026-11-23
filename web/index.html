@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#07090e" />
-  <title>DroidCloud · 原生云手机控制台</title>
+  <title>DroidCloud · 原生云手机平台</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%236366f1'/%3E%3Cstop offset='100%25' stop-color='%2310b981'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='%230d111a'/%3E%3Crect x='17' y='10' width='30' height='44' rx='6' fill='none' stroke='url(%23g)' stroke-width='4'/%3E%3Ccircle cx='32' cy='46' r='2.5' fill='%2310b981'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/css/app.css" />
 </head>
@@ -32,7 +32,7 @@
         </svg>
       </div>
       <h1 class="login-title">DroidCloud</h1>
-      <p class="login-subtitle">原生 Android · Google Play 云端控制台</p>
+      <p class="login-subtitle">多机原生 Android · Google Play 云手机平台</p>
 
       <form id="login-form" class="login-form" autocomplete="on">
         <label class="field-label" for="login-password">访问密码</label>
@@ -54,82 +54,90 @@
         </div>
         <div id="login-error" class="form-error hidden"></div>
         <button type="submit" id="login-submit" class="btn btn-primary btn-block">
-          <span>连接云手机</span>
+          <span>进入云手机中心</span>
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2">
             <path d="M5 12h14M13 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>
       </form>
       <div class="login-footer">
-        <span class="dot-pill"><span class="dot dot-emerald"></span>WebCodecs 低延迟直连</span>
-        <span id="login-android-badge" class="meta-chip">Android 16</span>
+        <span class="dot-pill"><span class="dot dot-emerald"></span>按需开机 · 零闲置耗电</span>
+        <span id="login-phone-count" class="meta-chip">Google Play</span>
       </div>
     </div>
   </main>
 
-  <!-- VIEW 2: Boot / Download Progress Screen -->
-  <main id="view-boot" class="view view-center hidden">
-    <div class="boot-card glass-panel">
-      <div class="boot-header">
-        <div class="boot-title-group">
-          <div class="spinner-ring"></div>
-          <div>
-            <h2 id="boot-heading">正在准备云手机环境</h2>
-            <p id="boot-message" class="muted">正在初始化…</p>
-          </div>
-        </div>
-        <button id="boot-logout-btn" class="btn btn-ghost btn-sm">退出登录</button>
-      </div>
-
-      <div class="progress-track">
-        <div id="boot-progress-bar" class="progress-fill" style="width: 8%"></div>
-      </div>
-      <div class="progress-meta">
-        <span id="boot-stage-label">阶段：初始化</span>
-        <span id="boot-percent">8%</span>
-      </div>
-
-      <div class="boot-steps" id="boot-steps">
-        <div class="boot-step" data-step="init"><span class="step-dot"></span><span>环境检查</span></div>
-        <div class="boot-step" data-step="downloading_sdk"><span class="step-dot"></span><span>工具链</span></div>
-        <div class="boot-step" data-step="downloading_image"><span class="step-dot"></span><span>谷歌镜像</span></div>
-        <div class="boot-step" data-step="creating_avd"><span class="step-dot"></span><span>创建设备</span></div>
-        <div class="boot-step" data-step="booting"><span class="step-dot"></span><span>系统启动</span></div>
-        <div class="boot-step" data-step="ready"><span class="step-dot"></span><span>画面就绪</span></div>
-      </div>
-
-      <div class="terminal-box">
-        <div class="terminal-header">
-          <span>启动日志</span>
-          <span class="muted">首次运行需下载 Google Play 系统镜像（约 2–3 GB），后续秒开</span>
-        </div>
-        <pre id="boot-logs" class="terminal-body"></pre>
-      </div>
-    </div>
-  </main>
-
-  <!-- VIEW 3: Main Cloud Phone Console -->
-  <div id="view-console" class="console-shell hidden">
-    <!-- Top Header -->
+  <!-- VIEW 2: Cloud Phone Fleet Dashboard -->
+  <div id="view-dashboard" class="console-shell hidden">
     <header class="topbar glass-bar">
       <div class="topbar-left">
         <div class="topbar-brand">
           <svg viewBox="0 0 36 36" width="22" height="22" fill="none">
-            <rect x="8" y="3" width="20" height="30" rx="5" stroke="url(#topGrad)" stroke-width="2.6" />
+            <rect x="8" y="3" width="20" height="30" rx="5" stroke="url(#dashGrad)" stroke-width="2.6" />
             <circle cx="18" cy="28" r="1.8" fill="#10b981" />
             <defs>
-              <linearGradient id="topGrad" x1="8" y1="3" x2="28" y2="33" gradientUnits="userSpaceOnUse">
+              <linearGradient id="dashGrad" x1="8" y1="3" x2="28" y2="33" gradientUnits="userSpaceOnUse">
                 <stop stop-color="#818cf8" />
                 <stop offset="1" stop-color="#34d399" />
               </linearGradient>
             </defs>
           </svg>
-          <span class="brand-name">DroidCloud</span>
+          <span>DroidCloud</span>
         </div>
+        <span class="meta-chip">设备中心</span>
+      </div>
+
+      <div class="topbar-center host-pills" id="host-metrics-bar">
+        <span class="host-pill">CPU <strong id="host-cpu">--%</strong></span>
+        <span class="host-pill">内存 <strong id="host-mem">--</strong></span>
+        <span class="host-pill">磁盘 <strong id="host-disk">--</strong></span>
+        <span class="host-pill">运行中 <strong id="host-running">0</strong> 台</span>
+      </div>
+
+      <div class="topbar-right">
+        <button id="btn-new-phone" class="btn btn-primary btn-sm">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4">
+            <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+          </svg>
+          <span>新建云手机</span>
+        </button>
+        <button id="dash-logout-btn" class="nav-tool-btn nav-tool-danger" title="退出登录">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="dashboard-main">
+      <div class="dashboard-container">
+        <div class="dashboard-intro">
+          <div>
+            <h2>我的云手机</h2>
+            <p class="muted small">平时保持关机不占 CPU/内存，需要时一键按需启动；开机自动匹配出口 IP 时区与 GPS，支持多型号与多 Android 版本。</p>
+          </div>
+        </div>
+
+        <div id="phone-grid" class="phone-grid"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- VIEW 3: Single Cloud Phone Live Console -->
+  <div id="view-console" class="console-shell hidden">
+    <header class="topbar glass-bar">
+      <div class="topbar-left">
+        <button id="btn-back-dashboard" class="btn btn-subtle btn-sm" title="返回设备中心（保持手机运行）">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>设备中心</span>
+        </button>
 
         <div class="device-pill">
           <span id="conn-dot" class="dot dot-amber"></span>
-          <span id="device-title">Pixel Cloud</span>
+          <span id="device-title">云手机</span>
+          <span id="console-geo-chip" class="geo-chip hidden"></span>
           <span id="stream-stats" class="stats-chip">-- FPS</span>
         </div>
       </div>
@@ -170,7 +178,7 @@
           </svg>
           <span>文件</span>
         </button>
-        <button class="nav-tool-btn" data-drawer="location" title="虚拟定位">
+        <button class="nav-tool-btn" data-drawer="location" title="虚拟定位与 IP 同步">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z" />
             <circle cx="12" cy="10" r="2.5" />
@@ -183,35 +191,26 @@
           </svg>
           <span>系统</span>
         </button>
-        <button id="logout-btn" class="nav-tool-btn nav-tool-danger" title="退出登录">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+        <button id="btn-console-poweroff" class="btn btn-danger btn-sm" title="安全保存快照并关机释放 CPU/内存">
+          <span>关机</span>
         </button>
       </div>
     </header>
 
-    <!-- Main Stage -->
     <div class="workspace">
       <section class="phone-stage" id="phone-stage">
         <div class="phone-rig">
-          <!-- Phone Frame -->
           <div class="phone-bezel" id="phone-bezel">
             <div class="screen-viewport" id="screen-viewport" tabindex="0" aria-label="Android 手机屏幕">
               <canvas id="video-canvas"></canvas>
               <video id="video-fallback" class="hidden" autoplay muted playsinline></video>
-
-              <!-- Pinch-to-zoom visual fingers -->
               <div id="pinch-dot-1" class="pinch-dot hidden"></div>
               <div id="pinch-dot-2" class="pinch-dot hidden"></div>
-
-              <!-- Waiting stream overlay -->
               <div id="stream-overlay" class="stream-overlay">
                 <div class="spinner-ring"></div>
                 <p id="stream-overlay-text">正在建立低延迟视频通道…</p>
               </div>
             </div>
-            <!-- Hidden IME textarea for seamless Chinese input directly on screen -->
             <textarea
               id="ime-sink"
               class="ime-sink"
@@ -223,7 +222,6 @@
             ></textarea>
           </div>
 
-          <!-- Side Hardware Control Dock -->
           <aside class="hardware-dock glass-panel" aria-label="手机按键栏">
             <button class="dock-btn" data-action="back" title="返回 (鼠标右键)">
               <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2">
@@ -243,9 +241,7 @@
               </svg>
               <span>多任务</span>
             </button>
-
             <div class="dock-divider"></div>
-
             <button class="dock-btn" data-action="vol_up" title="音量 +">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M11 5L6 9H2v6h4l5 4V5zM19 9v6M16 12h6" stroke-linecap="round" stroke-linejoin="round" />
@@ -264,9 +260,7 @@
               </svg>
               <span>电源</span>
             </button>
-
             <div class="dock-divider"></div>
-
             <button class="dock-btn" data-action="rotate" title="旋转屏幕">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" stroke-linecap="round" stroke-linejoin="round" />
@@ -296,7 +290,6 @@
           </aside>
         </div>
 
-        <!-- Subtle Gesture Hint Bar -->
         <div class="hint-strip">
           <span>左键拖拽滑屏</span>
           <span>·</span>
@@ -310,7 +303,6 @@
         </div>
       </section>
 
-      <!-- Slide-over Drawer Panel -->
       <aside id="side-drawer" class="drawer glass-panel hidden" aria-label="功能面板">
         <div class="drawer-header">
           <h3 id="drawer-title">应用</h3>
@@ -322,6 +314,124 @@
         </div>
         <div id="drawer-body" class="drawer-body"></div>
       </aside>
+    </div>
+  </div>
+
+  <!-- Create / Edit Phone Modal -->
+  <div id="phone-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-wide glass-panel">
+      <div class="modal-header">
+        <h4 id="phone-modal-title">新建云手机</h4>
+        <button id="phone-modal-close" class="icon-btn">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      <form id="phone-form" class="phone-form">
+        <input type="hidden" id="pf-id" />
+        <div class="form-grid">
+          <div class="form-field form-full">
+            <label class="field-label" for="pf-name">云手机名称</label>
+            <input id="pf-name" type="text" placeholder="例如：主力美区机 / 备用日区 Pixel 8" required />
+          </div>
+
+          <div class="form-field">
+            <label class="field-label" for="pf-version">Android 版本（正版 Google Play）</label>
+            <select id="pf-version"></select>
+          </div>
+
+          <div class="form-field">
+            <label class="field-label" for="pf-device">手机型号</label>
+            <select id="pf-device"></select>
+          </div>
+
+          <div class="form-field">
+            <label class="field-label" for="pf-screen">屏幕分辨率</label>
+            <select id="pf-screen"></select>
+          </div>
+
+          <div class="form-field">
+            <label class="field-label" for="pf-locale">系统语言</label>
+            <select id="pf-locale"></select>
+          </div>
+
+          <div class="form-field">
+            <label class="field-label" for="pf-ram">分配内存</label>
+            <select id="pf-ram">
+              <option value="2048">2 GB（轻量）</option>
+              <option value="3072">3 GB（省内存多开）</option>
+              <option value="4096" selected>4 GB（推荐）</option>
+              <option value="6144">6 GB（流畅多任务）</option>
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label class="field-label" for="pf-cores">分配 CPU 核心</label>
+            <select id="pf-cores">
+              <option value="2">2 核（适合多开）</option>
+              <option value="4" selected>4 核（推荐）</option>
+              <option value="6">6 核（单机满血）</option>
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label class="field-label" for="pf-idle">空闲自动关机（省资源）</label>
+            <select id="pf-idle">
+              <option value="0">关闭（手动关机）</option>
+              <option value="15">无连接 15 分钟后自动关机</option>
+              <option value="30" selected>无连接 30 分钟后自动关机</option>
+              <option value="60">无连接 60 分钟后自动关机</option>
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label class="field-label" for="pf-storage">内部存储</label>
+            <select id="pf-storage">
+              <option value="16G" selected>16 GB</option>
+              <option value="32G">32 GB</option>
+            </select>
+          </div>
+
+          <div class="form-field form-full">
+            <label class="field-label" for="pf-proxy">独立网络代理（可选，留空走宿主机直连）</label>
+            <input id="pf-proxy" type="text" placeholder="例如：http://127.0.0.1:7890 或 http://user:pass@ip:port" />
+          </div>
+
+          <div class="form-field form-full">
+            <label class="checkbox-inline">
+              <input type="checkbox" id="pf-auto-ip" checked />
+              <span>开机自动根据出口 IP 同步对应时区（TZ）与 GPS 定位（推荐，减少 Google 风控）</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-actions" style="margin-top:8px">
+          <span class="muted small" id="pf-hint">新建后默认关机，需要时再开机不占资源</span>
+          <div class="btn-group">
+            <button type="button" id="pf-cancel" class="btn btn-ghost btn-sm">取消</button>
+            <button type="submit" id="pf-save" class="btn btn-primary btn-sm">保存配置</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Phone Boot / Logs Modal -->
+  <div id="logs-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-wide glass-panel">
+      <div class="modal-header">
+        <h4 id="logs-modal-title">运行日志</h4>
+        <button id="logs-modal-close" class="icon-btn">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <div class="terminal-box">
+        <pre id="logs-modal-body" class="terminal-body" style="height:320px"></pre>
+      </div>
     </div>
   </div>
 
@@ -358,13 +468,11 @@
         <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
       <h3>松开鼠标即可上传</h3>
-      <p class="muted">.apk 文件将自动安装到手机；其他文件将保存到 /sdcard/Download</p>
+      <p class="muted">.apk 文件将自动安装到当前云手机；其他文件将保存到 /sdcard/Download</p>
     </div>
   </div>
 
-  <!-- Toast Container -->
   <div id="toast-container" class="toast-container"></div>
-
   <script type="module" src="/js/app.js"></script>
 </body>
 </html>

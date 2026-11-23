@@ -5,10 +5,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { AuthManager, getClientIp } from './auth.mjs';
-import { AdbClient } from './adb.mjs';
 import { WebSocketServer } from './ws.mjs';
-import { BootStatusTracker } from './status.mjs';
-import { ScrcpyManager, QUALITY_PRESETS } from './scrcpy.mjs';
+import { PhoneManager } from './phones.mjs';
+import { QUALITY_PRESETS } from './scrcpy.mjs';
 import { collectSystemMetrics } from './system.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -94,9 +93,13 @@ export function createDroidCloudServer(options = {}) {
   const port = Number(options.port ?? process.env.PORT ?? 6080);
   const host = options.host ?? process.env.HOST ?? '0.0.0.0';
   const auth = options.auth ?? new AuthManager({ password: options.password, persistDir: options.persistDir });
-  const adb = options.adb ?? new AdbClient();
-  const status = options.status ?? new BootStatusTracker();
-  const scrcpy = options.scrcpy ?? new ScrcpyManager({ adb });
+  const phones =
+    options.phones ??
+    new PhoneManager({
+      avdHome: options.avdHome || process.env.ANDROID_AVD_HOME_PARENT || '/root/.android',
+      sdkRoot: options.sdkRoot || process.env.ANDROID_SDK_ROOT || '/opt/android-sdk',
+      geoDetector: options.geoDetector,
+    });
   const enableBackgroundLoops = options.enableBackgroundLoops ?? true;
 
   const wss = new WebSocketServer({
@@ -104,72 +107,104 @@ export function createDroidCloudServer(options = {}) {
     verifyClient: (req) => auth.isAuthenticated(req),
   });
 
-  // Wire scrcpy events to WebSocket clients
-  scrcpy.on('meta', (meta) => {
-    wss.broadcastJson({ type: 'video_meta', ...meta });
-  });
+  // Track which phoneId each WebSocket client is watching (null = dashboard overview)
+  const clientScope = new Map(); // wsClient -> phoneId | null
 
-  scrcpy.on('frame', ({ frame, isConfig, isKeyFrame }) => {
-    wss.broadcastBinary(frame, { droppable: !isConfig && !isKeyFrame });
-  });
-
-  scrcpy.on('clipboard', (text) => {
-    wss.broadcastJson({ type: 'clipboard', text });
-  });
-
-  scrcpy.on('log', (line) => {
-    status.appendLog(line);
-  });
-
-  status.on('status', (st) => {
-    wss.broadcastJson({ type: 'status', ...st, streamConnected: scrcpy.isConnected });
-    if (st.ready && !scrcpy.isConnected && enableBackgroundLoops) {
-      scrcpy.start();
+  function broadcastToPhone(phoneId, obj) {
+    const text = JSON.stringify(obj);
+    for (const [client, scope] of clientScope.entries()) {
+      if (scope === phoneId && !client.closed) {
+        client.sendText(text);
+      }
     }
+  }
+
+  function broadcastBinaryToPhone(phoneId, buf, opts = {}) {
+    const maxBuffered = opts.maxBuffered ?? 384 * 1024;
+    for (const [client, scope] of clientScope.entries()) {
+      if (scope !== phoneId || client.closed) continue;
+      if (opts.droppable && client.bufferedAmount > maxBuffered) continue;
+      client.sendBinary(buf);
+    }
+  }
+
+  // Wire PhoneManager events -> WebSockets
+  phones.on('phones_changed', (list) => {
+    wss.broadcastJson({ type: 'phones', phones: list });
   });
 
-  status.on('log', (line) => {
-    wss.broadcastJson({ type: 'log', line });
+  phones.on('phone_status', (summary) => {
+    broadcastToPhone(summary.id, { type: 'phone_status', phone: summary });
   });
 
-  wss.on('connection', (client) => {
-    // Immediately send current status & recent logs
-    client.sendJson({
-      type: 'status',
-      ...status.getSnapshot(),
-      streamConnected: scrcpy.isConnected,
-      presets: QUALITY_PRESETS,
-      preset: scrcpy.preset,
+  phones.on('phone_log', ({ id, line }) => {
+    broadcastToPhone(id, { type: 'log', phoneId: id, line });
+  });
+
+  phones.on('phone_video_meta', ({ id, meta }) => {
+    broadcastToPhone(id, { type: 'video_meta', phoneId: id, ...meta });
+  });
+
+  phones.on('phone_video_frame', ({ id, frame, isConfig, isKeyFrame }) => {
+    broadcastBinaryToPhone(id, frame, { droppable: !isConfig && !isKeyFrame });
+  });
+
+  phones.on('phone_clipboard', ({ id, text }) => {
+    broadcastToPhone(id, { type: 'clipboard', phoneId: id, text });
+  });
+
+  wss.on('connection', (client, req) => {
+    const url = new URL(req.url || '/ws', 'http://localhost');
+    const phoneId = url.searchParams.get('phoneId') || null;
+    clientScope.set(client, phoneId);
+
+    // Send fleet overview immediately
+    client.sendJson({ type: 'phones', phones: phones.listPhones() });
+
+    if (phoneId) {
+      const summary = phones.getPhoneSummary(phoneId);
+      const rt = phones.getRuntime(phoneId);
+      if (summary && rt) {
+        phones.attachViewer(phoneId, client);
+        client.sendJson({
+          type: 'phone_status',
+          phone: summary,
+          logs: phones.getPhoneLogs(phoneId),
+          presets: QUALITY_PRESETS,
+        });
+        if (rt.scrcpy?.isConnected && rt.scrcpy.meta.width > 0) {
+          client.sendJson({ type: 'video_meta', phoneId, ...rt.scrcpy.meta });
+          if (rt.scrcpy.lastConfigFrame) client.sendBinary(rt.scrcpy.lastConfigFrame);
+          if (rt.scrcpy.lastKeyFrame) client.sendBinary(rt.scrcpy.lastKeyFrame);
+          rt.scrcpy.requestKeyFrame();
+        }
+      }
+    }
+
+    client.on('close', () => {
+      const scope = clientScope.get(client);
+      clientScope.delete(client);
+      if (scope) {
+        phones.detachViewer(scope, client);
+      }
     });
-
-    if (scrcpy.isConnected && scrcpy.meta.width > 0) {
-      client.sendJson({ type: 'video_meta', ...scrcpy.meta });
-      if (scrcpy.lastConfigFrame) {
-        client.sendBinary(scrcpy.lastConfigFrame);
-      }
-      if (scrcpy.lastKeyFrame) {
-        client.sendBinary(scrcpy.lastKeyFrame);
-      }
-      // Ask scrcpy-server for a fresh IDR keyframe so new viewer starts smoothly
-      scrcpy.requestKeyFrame();
-    } else if (status.state.ready && enableBackgroundLoops) {
-      scrcpy.start();
-    }
 
     client.on('message', (data, isBinary) => {
+      const targetId = clientScope.get(client);
       if (isBinary) {
-        handleBinaryControl(data);
+        if (targetId) handleBinaryControl(targetId, data);
       } else {
-        handleJsonControl(client, data);
+        handleJsonControl(client, targetId, data);
       }
     });
   });
 
-  function handleBinaryControl(buf) {
-    if (!Buffer.isBuffer(buf) || buf.length < 2) return;
+  function handleBinaryControl(phoneId, buf) {
+    const rt = phones.getRuntime(phoneId);
+    const scrcpy = rt?.scrcpy;
+    if (!scrcpy || !Buffer.isBuffer(buf) || buf.length < 2) return;
     const type = buf[0];
-    // Compact browser->server binary control packets:
-    // 0x10 = touch: [u8 0x10, u8 action, i32 pointerId, f32 normX, f32 normY, f32 pressure] (18 bytes)
+
     if (type === 0x10 && buf.length >= 18) {
       const action = buf.readUInt8(1);
       const pointerId = BigInt(buf.readInt32BE(2));
@@ -178,13 +213,11 @@ export function createDroidCloudServer(options = {}) {
       const pressure = buf.readFloatBE(14);
       const w = scrcpy.meta.width || 720;
       const h = scrcpy.meta.height || 1600;
-      const x = Math.max(0, Math.min(w - 1, Math.round(normX * w)));
-      const y = Math.max(0, Math.min(h - 1, Math.round(normY * h)));
       scrcpy.sendTouch({
         action,
         pointerId,
-        x,
-        y,
+        x: Math.max(0, Math.min(w - 1, Math.round(normX * w))),
+        y: Math.max(0, Math.min(h - 1, Math.round(normY * h))),
         screenWidth: w,
         screenHeight: h,
         pressure,
@@ -192,7 +225,6 @@ export function createDroidCloudServer(options = {}) {
       return;
     }
 
-    // 0x11 = scroll: [u8 0x11, f32 normX, f32 normY, f32 hScroll, f32 vScroll] (17 bytes)
     if (type === 0x11 && buf.length >= 17) {
       const normX = buf.readFloatBE(1);
       const normY = buf.readFloatBE(5);
@@ -200,11 +232,9 @@ export function createDroidCloudServer(options = {}) {
       const vScroll = buf.readFloatBE(13);
       const w = scrcpy.meta.width || 720;
       const h = scrcpy.meta.height || 1600;
-      const x = Math.max(0, Math.min(w - 1, Math.round(normX * w)));
-      const y = Math.max(0, Math.min(h - 1, Math.round(normY * h)));
       scrcpy.sendScroll({
-        x,
-        y,
+        x: Math.max(0, Math.min(w - 1, Math.round(normX * w))),
+        y: Math.max(0, Math.min(h - 1, Math.round(normY * h))),
         screenWidth: w,
         screenHeight: h,
         hScroll,
@@ -213,13 +243,23 @@ export function createDroidCloudServer(options = {}) {
     }
   }
 
-  async function handleJsonControl(client, raw) {
+  async function handleJsonControl(client, phoneId, raw) {
     let msg;
     try {
       msg = JSON.parse(raw);
     } catch {
       return;
     }
+
+    if (msg.type === 'ping') {
+      client.sendJson({ type: 'pong', ts: msg.ts });
+      return;
+    }
+
+    if (!phoneId) return;
+    const rt = phones.getRuntime(phoneId);
+    const scrcpy = rt?.scrcpy;
+    if (!scrcpy) return;
 
     switch (msg.type) {
       case 'key':
@@ -237,7 +277,8 @@ export function createDroidCloudServer(options = {}) {
       case 'quality':
         try {
           await scrcpy.setQualityPreset(msg.preset);
-          wss.broadcastJson({
+          phones.updatePhone(phoneId, { streamPreset: msg.preset });
+          broadcastToPhone(phoneId, {
             type: 'toast',
             level: 'success',
             message: `画质已切换为 ${QUALITY_PRESETS[msg.preset].label}`,
@@ -246,38 +287,41 @@ export function createDroidCloudServer(options = {}) {
           client.sendJson({ type: 'toast', level: 'error', message: err.message });
         }
         break;
-      case 'ping':
-        client.sendJson({ type: 'pong', ts: msg.ts });
-        break;
       default:
         break;
     }
+  }
+
+  function requireRunningAdb(phoneId) {
+    const rt = phones.getRuntime(phoneId);
+    if (!rt) throw Object.assign(new Error('找不到指定的云手机'), { statusCode: 404 });
+    if (rt.status !== 'running' || !rt.adb) {
+      throw Object.assign(new Error('该云手机尚未开机就绪'), { statusCode: 409 });
+    }
+    return rt;
   }
 
   async function handleRequest(req, res) {
     const url = new URL(req.url || '/', 'http://localhost');
     const pathname = url.pathname;
 
-    // Security headers
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     res.setHeader('Referrer-Policy', 'same-origin');
 
-    // Public health check
     if (pathname === '/api/health' && req.method === 'GET') {
+      const list = phones.listPhones();
       return sendJson(res, 200, {
         ok: true,
-        stage: status.state.stage,
-        ready: status.state.ready,
-        streamConnected: scrcpy.isConnected,
+        totalPhones: list.length,
+        runningPhones: list.filter((p) => p.status === 'running').length,
       });
     }
 
-    // Auth endpoints
     if (pathname === '/api/auth/status' && req.method === 'GET') {
       return sendJson(res, 200, {
         authenticated: auth.isAuthenticated(req),
-        androidVersion: status.state.androidVersion,
+        totalPhones: phones.listPhones().length,
       });
     }
 
@@ -313,15 +357,9 @@ export function createDroidCloudServer(options = {}) {
     }
 
     if (pathname === '/api/auth/logout' && req.method === 'POST') {
-      return sendJson(
-        res,
-        200,
-        { ok: true },
-        { 'Set-Cookie': auth.buildLogoutCookie(req) }
-      );
+      return sendJson(res, 200, { ok: true }, { 'Set-Cookie': auth.buildLogoutCookie(req) });
     }
 
-    // Protected API routes
     if (pathname.startsWith('/api/')) {
       if (!auth.isAuthenticated(req)) {
         return sendJson(res, 401, { error: '未登录或会话已过期' });
@@ -329,144 +367,208 @@ export function createDroidCloudServer(options = {}) {
       return handleProtectedApi(req, res, url);
     }
 
-    // Static frontend assets
     return serveStatic(req, res, pathname);
   }
 
   async function handleProtectedApi(req, res, url) {
     const pathname = url.pathname;
     try {
-      if (pathname === '/api/status' && req.method === 'GET') {
-        const [metrics, deviceInfo] = await Promise.all([
-          collectSystemMetrics(),
-          status.state.ready ? adb.getDeviceInfo() : Promise.resolve(null),
-        ]);
+      // Fleet & Catalog endpoints
+      if (pathname === '/api/catalog' && req.method === 'GET') {
+        return sendJson(res, 200, phones.getCatalog());
+      }
+
+      if (pathname === '/api/phones' && req.method === 'GET') {
+        const metrics = await collectSystemMetrics();
         return sendJson(res, 200, {
-          ...status.getSnapshot(),
-          streamConnected: scrcpy.isConnected,
-          videoMeta: scrcpy.meta,
-          preset: scrcpy.preset,
-          presets: QUALITY_PRESETS,
-          metrics: {
-            ...metrics,
-            clients: wss.clients.size,
-            streamBitrateKbps: scrcpy.bitrateKbps,
-          },
-          deviceInfo,
+          phones: phones.listPhones(),
+          metrics,
+          catalog: phones.getCatalog(),
         });
       }
 
-      if (pathname === '/api/screenshot' && req.method === 'GET') {
-        const png = await adb.screenshot();
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        res.writeHead(200, {
-          'Content-Type': 'image/png',
-          'Content-Disposition': `attachment; filename="droidcloud-${ts}.png"`,
-          'Content-Length': png.length,
-          'Cache-Control': 'no-store',
-        });
-        return res.end(png);
-      }
-
-      if (pathname === '/api/apk/install' && req.method === 'POST') {
-        const rawName = decodeURIComponent(String(req.headers['x-filename'] || 'app.apk'));
-        if (!rawName.toLowerCase().endsWith('.apk')) {
-          return sendJson(res, 400, { error: '请上传 .apk 格式的安装包' });
-        }
-        const uploaded = await streamBodyToTempFile(req, 'apk');
-        try {
-          const result = await adb.installApk(uploaded.tmpPath);
-          return sendJson(res, 200, { ok: true, filename: rawName, result });
-        } finally {
-          await uploaded.cleanup();
-        }
-      }
-
-      if (pathname === '/api/apps' && req.method === 'GET') {
-        const apps = await adb.listApps();
-        return sendJson(res, 200, apps);
-      }
-
-      if (pathname === '/api/apps/launch' && req.method === 'POST') {
+      if (pathname === '/api/phones' && req.method === 'POST') {
         const body = await readJsonBody(req);
-        await adb.launchApp(body.packageName);
-        return sendJson(res, 200, { ok: true });
-      }
-
-      if (pathname === '/api/apps/uninstall' && req.method === 'POST') {
-        const body = await readJsonBody(req);
-        const result = await adb.uninstallApp(body.packageName);
-        return sendJson(res, 200, { ok: true, result });
-      }
-
-      if (pathname === '/api/files' && req.method === 'GET') {
-        const target = url.searchParams.get('path') || '/sdcard/Download';
-        const listing = await adb.listFiles(target);
-        return sendJson(res, 200, listing);
-      }
-
-      if (pathname === '/api/files/upload' && req.method === 'POST') {
-        const targetDir = url.searchParams.get('path') || '/sdcard/Download';
-        const rawName = decodeURIComponent(String(req.headers['x-filename'] || 'file.bin'));
-        const uploaded = await streamBodyToTempFile(req, 'file');
-        try {
-          const remotePath = await adb.pushFile(uploaded.tmpPath, targetDir, rawName);
-          return sendJson(res, 200, { ok: true, remotePath, size: uploaded.size });
-        } finally {
-          await uploaded.cleanup();
+        const created = phones.createPhone(body);
+        if (body.autoStart) {
+          await phones.startPhone(created.id);
         }
+        return sendJson(res, 201, { phone: phones.getPhoneSummary(created.id) });
       }
 
-      if (pathname === '/api/files/download' && req.method === 'GET') {
-        const target = url.searchParams.get('path');
-        if (!target) return sendJson(res, 400, { error: '缺少 path 参数' });
-        const pulled = await adb.pullToTempFile(target);
-        const stat = await fs.promises.stat(pulled.tmpPath);
-        res.writeHead(200, {
-          'Content-Type': 'application/octet-stream',
-          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(pulled.filename)}`,
-          'Content-Length': stat.size,
-          'Cache-Control': 'no-store',
-        });
-        const rs = fs.createReadStream(pulled.tmpPath);
-        rs.on('close', () => pulled.cleanup());
-        rs.on('error', () => pulled.cleanup());
-        return rs.pipe(res);
-      }
-
-      if (pathname === '/api/files' && req.method === 'DELETE') {
-        const target = url.searchParams.get('path');
-        if (!target) return sendJson(res, 400, { error: '缺少 path 参数' });
-        await adb.deleteFile(target);
-        return sendJson(res, 200, { ok: true });
-      }
-
-      if (pathname === '/api/device/location' && req.method === 'POST') {
-        const body = await readJsonBody(req);
-        await adb.setLocation(body.lon, body.lat);
-        return sendJson(res, 200, { ok: true });
-      }
-
-      if (pathname === '/api/device/reconnect-stream' && req.method === 'POST') {
-        await scrcpy.restart();
-        return sendJson(res, 200, { ok: true });
-      }
-
-      if (pathname === '/api/device/reboot' && req.method === 'POST') {
-        await adb.shell('svc power reboot', { timeout: 5000 }).catch(() => {});
-        status.setState({
-          stage: 'booting',
-          progress: 65,
-          message: '正在重启 Android 系统…',
-          ready: false,
-        });
-        return sendJson(res, 200, { ok: true });
+      // Per-phone routes: /api/phones/:id[/action...]
+      const m = pathname.match(/^\/api\/phones\/([^/]+)(\/.*)?$/);
+      if (m) {
+        const phoneId = decodeURIComponent(m[1]);
+        const sub = m[2] || '';
+        return handlePhoneRoute(req, res, url, phoneId, sub);
       }
 
       return sendJson(res, 404, { error: 'API 路径不存在' });
     } catch (err) {
       return sendJson(res, err.statusCode || 500, { error: err.message || '服务器内部错误' });
     }
+  }
+
+  async function handlePhoneRoute(req, res, url, phoneId, sub) {
+    if (sub === '' && req.method === 'GET') {
+      const summary = phones.getPhoneSummary(phoneId);
+      if (!summary) return sendJson(res, 404, { error: '找不到指定的云手机' });
+      const rt = phones.getRuntime(phoneId);
+      const [metrics, deviceInfo] = await Promise.all([
+        collectSystemMetrics(),
+        rt?.status === 'running' && rt.adb ? rt.adb.getDeviceInfo() : Promise.resolve(null),
+      ]);
+      return sendJson(res, 200, {
+        phone: summary,
+        logs: phones.getPhoneLogs(phoneId),
+        metrics,
+        deviceInfo,
+      });
+    }
+
+    if (sub === '' && req.method === 'PATCH') {
+      const body = await readJsonBody(req);
+      const updated = phones.updatePhone(phoneId, body);
+      return sendJson(res, 200, { phone: updated });
+    }
+
+    if (sub === '' && req.method === 'DELETE') {
+      await phones.deletePhone(phoneId);
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (sub === '/start' && req.method === 'POST') {
+      const summary = await phones.startPhone(phoneId);
+      return sendJson(res, 200, { phone: summary });
+    }
+
+    if (sub === '/stop' && req.method === 'POST') {
+      await phones.stopPhone(phoneId);
+      return sendJson(res, 200, { phone: phones.getPhoneSummary(phoneId) });
+    }
+
+    if (sub === '/reboot' && req.method === 'POST') {
+      const summary = await phones.rebootPhone(phoneId);
+      return sendJson(res, 200, { phone: summary });
+    }
+
+    if (sub === '/sync-ip' && req.method === 'POST') {
+      const geo = await phones.syncPhoneIpNow(phoneId);
+      return sendJson(res, 200, { ok: true, geo });
+    }
+
+    if (sub === '/logs' && req.method === 'GET') {
+      return sendJson(res, 200, { logs: phones.getPhoneLogs(phoneId) });
+    }
+
+    // Running-device ADB routes
+    if (sub === '/screenshot' && req.method === 'GET') {
+      const rt = requireRunningAdb(phoneId);
+      const png = await rt.adb.screenshot();
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      res.writeHead(200, {
+        'Content-Type': 'image/png',
+        'Content-Disposition': `attachment; filename="droidcloud-${phoneId}-${ts}.png"`,
+        'Content-Length': png.length,
+        'Cache-Control': 'no-store',
+      });
+      return res.end(png);
+    }
+
+    if (sub === '/apk/install' && req.method === 'POST') {
+      const rt = requireRunningAdb(phoneId);
+      const rawName = decodeURIComponent(String(req.headers['x-filename'] || 'app.apk'));
+      if (!rawName.toLowerCase().endsWith('.apk')) {
+        return sendJson(res, 400, { error: '请上传 .apk 格式的安装包' });
+      }
+      const uploaded = await streamBodyToTempFile(req, 'apk');
+      try {
+        const result = await rt.adb.installApk(uploaded.tmpPath);
+        return sendJson(res, 200, { ok: true, filename: rawName, result });
+      } finally {
+        await uploaded.cleanup();
+      }
+    }
+
+    if (sub === '/apps' && req.method === 'GET') {
+      const rt = requireRunningAdb(phoneId);
+      return sendJson(res, 200, await rt.adb.listApps());
+    }
+
+    if (sub === '/apps/launch' && req.method === 'POST') {
+      const rt = requireRunningAdb(phoneId);
+      const body = await readJsonBody(req);
+      await rt.adb.launchApp(body.packageName);
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (sub === '/apps/uninstall' && req.method === 'POST') {
+      const rt = requireRunningAdb(phoneId);
+      const body = await readJsonBody(req);
+      const result = await rt.adb.uninstallApp(body.packageName);
+      return sendJson(res, 200, { ok: true, result });
+    }
+
+    if (sub === '/files' && req.method === 'GET') {
+      const rt = requireRunningAdb(phoneId);
+      const target = url.searchParams.get('path') || '/sdcard/Download';
+      return sendJson(res, 200, await rt.adb.listFiles(target));
+    }
+
+    if (sub === '/files/upload' && req.method === 'POST') {
+      const rt = requireRunningAdb(phoneId);
+      const targetDir = url.searchParams.get('path') || '/sdcard/Download';
+      const rawName = decodeURIComponent(String(req.headers['x-filename'] || 'file.bin'));
+      const uploaded = await streamBodyToTempFile(req, 'file');
+      try {
+        const remotePath = await rt.adb.pushFile(uploaded.tmpPath, targetDir, rawName);
+        return sendJson(res, 200, { ok: true, remotePath, size: uploaded.size });
+      } finally {
+        await uploaded.cleanup();
+      }
+    }
+
+    if (sub === '/files/download' && req.method === 'GET') {
+      const rt = requireRunningAdb(phoneId);
+      const target = url.searchParams.get('path');
+      if (!target) return sendJson(res, 400, { error: '缺少 path 参数' });
+      const pulled = await rt.adb.pullToTempFile(target);
+      const stat = await fs.promises.stat(pulled.tmpPath);
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(pulled.filename)}`,
+        'Content-Length': stat.size,
+        'Cache-Control': 'no-store',
+      });
+      const rs = fs.createReadStream(pulled.tmpPath);
+      rs.on('close', () => pulled.cleanup());
+      rs.on('error', () => pulled.cleanup());
+      return rs.pipe(res);
+    }
+
+    if (sub === '/files' && req.method === 'DELETE') {
+      const rt = requireRunningAdb(phoneId);
+      const target = url.searchParams.get('path');
+      if (!target) return sendJson(res, 400, { error: '缺少 path 参数' });
+      await rt.adb.deleteFile(target);
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (sub === '/location' && req.method === 'POST') {
+      const rt = requireRunningAdb(phoneId);
+      const body = await readJsonBody(req);
+      await rt.adb.setLocation(body.lon, body.lat);
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (sub === '/reconnect-stream' && req.method === 'POST') {
+      const rt = requireRunningAdb(phoneId);
+      if (rt.scrcpy) await rt.scrcpy.restart();
+      return sendJson(res, 200, { ok: true });
+    }
+
+    return sendJson(res, 404, { error: 'API 路径不存在' });
   }
 
   function serveStatic(req, res, pathname) {
@@ -491,7 +593,6 @@ export function createDroidCloudServer(options = {}) {
 
     fs.stat(fullPath, (err, stat) => {
       if (err || !stat.isFile()) {
-        // SPA fallback to index.html for unknown non-asset paths
         const indexHtml = path.join(WEB_DIR, 'index.html');
         fs.readFile(indexHtml, (e2, data) => {
           if (e2) {
@@ -531,53 +632,36 @@ export function createDroidCloudServer(options = {}) {
   wss.attach(httpServer);
 
   let metricsTimer = null;
-  let healthPollTimer = null;
 
   function startBackgroundLoops() {
-    status.start();
-
+    phones.startBackgroundWatchers();
     metricsTimer = setInterval(async () => {
       if (wss.clients.size === 0) return;
       try {
         const m = await collectSystemMetrics();
-        wss.broadcastJson({
-          type: 'metrics',
-          ...m,
-          clients: wss.clients.size,
-          streamBitrateKbps: scrcpy.bitrateKbps,
-        });
+        wss.broadcastJson({ type: 'metrics', ...m });
       } catch {
         // ignore
       }
     }, 3000);
     metricsTimer.unref?.();
 
-    // Watch ADB boot readiness & keep scrcpy running whenever device is ready
-    healthPollTimer = setInterval(async () => {
-      if (!status.state.ready) {
-        const bootOk = await adb.isDeviceReady();
-        if (bootOk && status.state.stage === 'booting') {
-          status.setState({
-            stage: 'ready',
-            progress: 100,
-            message: 'Android 已就绪',
-            ready: true,
-          });
-        }
-      } else if (!scrcpy.isConnected) {
-        scrcpy.start();
+    // Optional: auto-start a specific phone if user explicitly sets AUTO_START_PHONE=<id|first>
+    const autoStart = String(process.env.AUTO_START_PHONE || '').trim();
+    if (autoStart) {
+      const list = phones.listPhones();
+      const target = autoStart === 'first' ? list[0] : list.find((p) => p.id === autoStart);
+      if (target) {
+        phones.startPhone(target.id).catch(() => {});
       }
-    }, 3000);
-    healthPollTimer.unref?.();
+    }
   }
 
   return {
     httpServer,
     wss,
     auth,
-    adb,
-    status,
-    scrcpy,
+    phones,
     listen() {
       return new Promise((resolve) => {
         httpServer.listen(port, host, () => {
@@ -590,33 +674,30 @@ export function createDroidCloudServer(options = {}) {
     },
     async close() {
       clearInterval(metricsTimer);
-      clearInterval(healthPollTimer);
-      status.stop();
-      scrcpy.stop();
+      await phones.stopAll();
       wss.closeAll();
       await new Promise((resolve) => httpServer.close(() => resolve()));
     },
   };
 }
 
-// Run directly when executed as main module
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const srv = createDroidCloudServer();
   srv.listen().then((addr) => {
     const port = typeof addr === 'object' && addr ? addr.port : process.env.PORT || 6080;
-    console.log(`[droidcloud] Web 控制台已启动: http://0.0.0.0:${port}`);
+    console.log(`[droidcloud] 多机云手机控制台已启动: http://0.0.0.0:${port}`);
+    console.log('[droidcloud] 默认按需开机模式：所有云手机初始关机（零 CPU/内存占用），登录网页按需开启');
     if (srv.auth.generated) {
       console.log('============================================================');
       console.log(`[droidcloud] 未设置 ACCESS_PASSWORD，已自动生成访问密码:`);
       console.log(`[droidcloud] 密码: ${srv.auth.password}`);
       console.log('============================================================');
-    } else {
-      console.log('[droidcloud] 已启用密码保护 (ACCESS_PASSWORD)');
     }
   });
 
   const shutdown = async () => {
+    console.log('[droidcloud] 正在安全关闭所有运行中的云手机…');
     await srv.close();
     process.exit(0);
   };
