@@ -1,0 +1,40 @@
+services:
+  droidcloud:
+    build: .
+    # 推送到 GitHub 后也可以直接改用自动构建的 GHCR 镜像：
+    # image: ghcr.io/<your-github-username>/<your-repo>:latest
+    container_name: droidcloud
+    devices:
+      - /dev/kvm:/dev/kvm
+    environment:
+      # 强烈建议修改为你自己的强密码；若留空则首次启动自动生成并打印在容器日志里
+      ACCESS_PASSWORD: "${ACCESS_PASSWORD:-change-me-please}"
+      ANDROID_VERSION: "${ANDROID_VERSION:-16}"       # 14 / 15 / 16
+      IMG_TAG: "google_apis_playstore"                # 正版 Google Play 镜像
+      DEVICE: "${DEVICE:-pixel_7}"
+      RAM_MB: "${RAM_MB:-4096}"
+      CORES: "${CORES:-4}"
+      DATA_SIZE: "${DATA_SIZE:-16G}"
+      # 屏幕分辨率档位：smooth (540x1200) | balanced (720x1600, 推荐) | hd (1080x2400)
+      SCREEN_PRESET: "${SCREEN_PRESET:-balanced}"
+      # 推流画质档位（网页里也可随时切换）：smooth | balanced | ultra
+      STREAM_PRESET: "${STREAM_PRESET:-balanced}"
+      LANG_LOCALE: "${LANG_LOCALE:-zh-CN}"
+      TZ: "${TZ:-Asia/Shanghai}"
+      DNS_SERVERS: "${DNS_SERVERS:-8.8.8.8,1.1.1.1}"
+      # 可选：如果需要通过代理访问 Google Play，取消注释并填写
+      # HTTP_PROXY_URL: "http://host.docker.internal:7890"
+      EXPOSE_ADB: "false"
+    ports:
+      - "${PORT:-6080}:6080"
+    volumes:
+      # 兼容原项目的数据卷路径，复用已下载的 Android SDK 和 Google 账号数据
+      - android-sdk:/opt/android-sdk
+      - android-avd:/root/.android
+      - ./apks:/apks
+    shm_size: "2g"
+    restart: unless-stopped
+
+volumes:
+  android-sdk:
+  android-avd:

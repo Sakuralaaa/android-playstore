@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#07090e" />
+  <title>DroidCloud · 原生云手机控制台</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%236366f1'/%3E%3Cstop offset='100%25' stop-color='%2310b981'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='%230d111a'/%3E%3Crect x='17' y='10' width='30' height='44' rx='6' fill='none' stroke='url(%23g)' stroke-width='4'/%3E%3Ccircle cx='32' cy='46' r='2.5' fill='%2310b981'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <!-- Ambient Background -->
+  <div class="bg-ambient" aria-hidden="true">
+    <div class="bg-orb bg-orb-1"></div>
+    <div class="bg-orb bg-orb-2"></div>
+  </div>
+
+  <!-- VIEW 1: Login Screen -->
+  <main id="view-login" class="view view-center hidden">
+    <div class="login-card glass-panel">
+      <div class="brand-badge">
+        <svg viewBox="0 0 36 36" width="32" height="32" fill="none">
+          <rect x="8" y="3" width="20" height="30" rx="5" stroke="url(#brandGrad)" stroke-width="2.4" />
+          <line x1="15" y1="7" x2="21" y2="7" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round" />
+          <circle cx="18" cy="28" r="1.6" fill="#10b981" />
+          <defs>
+            <linearGradient id="brandGrad" x1="8" y1="3" x2="28" y2="33" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#818cf8" />
+              <stop offset="1" stop-color="#34d399" />
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <h1 class="login-title">DroidCloud</h1>
+      <p class="login-subtitle">原生 Android · Google Play 云端控制台</p>
+
+      <form id="login-form" class="login-form" autocomplete="on">
+        <label class="field-label" for="login-password">访问密码</label>
+        <div class="password-wrap">
+          <input
+            id="login-password"
+            name="password"
+            type="password"
+            placeholder="请输入访问密码"
+            autocomplete="current-password"
+            required
+          />
+          <button type="button" id="toggle-pw-btn" class="icon-btn-inline" title="显示/隐藏密码" aria-label="显示或隐藏密码">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+        </div>
+        <div id="login-error" class="form-error hidden"></div>
+        <button type="submit" id="login-submit" class="btn btn-primary btn-block">
+          <span>连接云手机</span>
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M5 12h14M13 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </form>
+      <div class="login-footer">
+        <span class="dot-pill"><span class="dot dot-emerald"></span>WebCodecs 低延迟直连</span>
+        <span id="login-android-badge" class="meta-chip">Android 16</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- VIEW 2: Boot / Download Progress Screen -->
+  <main id="view-boot" class="view view-center hidden">
+    <div class="boot-card glass-panel">
+      <div class="boot-header">
+        <div class="boot-title-group">
+          <div class="spinner-ring"></div>
+          <div>
+            <h2 id="boot-heading">正在准备云手机环境</h2>
+            <p id="boot-message" class="muted">正在初始化…</p>
+          </div>
+        </div>
+        <button id="boot-logout-btn" class="btn btn-ghost btn-sm">退出登录</button>
+      </div>
+
+      <div class="progress-track">
+        <div id="boot-progress-bar" class="progress-fill" style="width: 8%"></div>
+      </div>
+      <div class="progress-meta">
+        <span id="boot-stage-label">阶段：初始化</span>
+        <span id="boot-percent">8%</span>
+      </div>
+
+      <div class="boot-steps" id="boot-steps">
+        <div class="boot-step" data-step="init"><span class="step-dot"></span><span>环境检查</span></div>
+        <div class="boot-step" data-step="downloading_sdk"><span class="step-dot"></span><span>工具链</span></div>
+        <div class="boot-step" data-step="downloading_image"><span class="step-dot"></span><span>谷歌镜像</span></div>
+        <div class="boot-step" data-step="creating_avd"><span class="step-dot"></span><span>创建设备</span></div>
+        <div class="boot-step" data-step="booting"><span class="step-dot"></span><span>系统启动</span></div>
+        <div class="boot-step" data-step="ready"><span class="step-dot"></span><span>画面就绪</span></div>
+      </div>
+
+      <div class="terminal-box">
+        <div class="terminal-header">
+          <span>启动日志</span>
+          <span class="muted">首次运行需下载 Google Play 系统镜像（约 2–3 GB），后续秒开</span>
+        </div>
+        <pre id="boot-logs" class="terminal-body"></pre>
+      </div>
+    </div>
+  </main>
+
+  <!-- VIEW 3: Main Cloud Phone Console -->
+  <div id="view-console" class="console-shell hidden">
+    <!-- Top Header -->
+    <header class="topbar glass-bar">
+      <div class="topbar-left">
+        <div class="topbar-brand">
+          <svg viewBox="0 0 36 36" width="22" height="22" fill="none">
+            <rect x="8" y="3" width="20" height="30" rx="5" stroke="url(#topGrad)" stroke-width="2.6" />
+            <circle cx="18" cy="28" r="1.8" fill="#10b981" />
+            <defs>
+              <linearGradient id="topGrad" x1="8" y1="3" x2="28" y2="33" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#818cf8" />
+                <stop offset="1" stop-color="#34d399" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <span class="brand-name">DroidCloud</span>
+        </div>
+
+        <div class="device-pill">
+          <span id="conn-dot" class="dot dot-amber"></span>
+          <span id="device-title">Pixel Cloud</span>
+          <span id="stream-stats" class="stats-chip">-- FPS</span>
+        </div>
+      </div>
+
+      <div class="topbar-center">
+        <div class="segmented" id="quality-segmented" role="group" aria-label="画质档位">
+          <button class="seg-btn" data-preset="smooth">流畅</button>
+          <button class="seg-btn active" data-preset="balanced">均衡</button>
+          <button class="seg-btn" data-preset="ultra">高清</button>
+        </div>
+
+        <button id="open-ime-btn" class="btn btn-subtle btn-sm" title="输入中文或粘贴文本 (Ctrl+K)">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="5" width="20" height="14" rx="2" />
+            <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" stroke-linecap="round" />
+          </svg>
+          <span>输入中文</span>
+        </button>
+      </div>
+
+      <div class="topbar-right">
+        <button class="nav-tool-btn" data-drawer="apps" title="应用管理与快捷启动">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" />
+            <rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
+          </svg>
+          <span>应用</span>
+        </button>
+        <button class="nav-tool-btn" data-drawer="apk" title="安装 APK">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>装包</span>
+        </button>
+        <button class="nav-tool-btn" data-drawer="files" title="文件传输">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+          </svg>
+          <span>文件</span>
+        </button>
+        <button class="nav-tool-btn" data-drawer="location" title="虚拟定位">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z" />
+            <circle cx="12" cy="10" r="2.5" />
+          </svg>
+          <span>定位</span>
+        </button>
+        <button class="nav-tool-btn" data-drawer="system" title="系统状态与日志">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12h4l3-7 4 14 3-7h4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>系统</span>
+        </button>
+        <button id="logout-btn" class="nav-tool-btn nav-tool-danger" title="退出登录">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Stage -->
+    <div class="workspace">
+      <section class="phone-stage" id="phone-stage">
+        <div class="phone-rig">
+          <!-- Phone Frame -->
+          <div class="phone-bezel" id="phone-bezel">
+            <div class="screen-viewport" id="screen-viewport" tabindex="0" aria-label="Android 手机屏幕">
+              <canvas id="video-canvas"></canvas>
+              <video id="video-fallback" class="hidden" autoplay muted playsinline></video>
+
+              <!-- Pinch-to-zoom visual fingers -->
+              <div id="pinch-dot-1" class="pinch-dot hidden"></div>
+              <div id="pinch-dot-2" class="pinch-dot hidden"></div>
+
+              <!-- Waiting stream overlay -->
+              <div id="stream-overlay" class="stream-overlay">
+                <div class="spinner-ring"></div>
+                <p id="stream-overlay-text">正在建立低延迟视频通道…</p>
+              </div>
+            </div>
+            <!-- Hidden IME textarea for seamless Chinese input directly on screen -->
+            <textarea
+              id="ime-sink"
+              class="ime-sink"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-hidden="true"
+            ></textarea>
+          </div>
+
+          <!-- Side Hardware Control Dock -->
+          <aside class="hardware-dock glass-panel" aria-label="手机按键栏">
+            <button class="dock-btn" data-action="back" title="返回 (鼠标右键)">
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span>返回</span>
+            </button>
+            <button class="dock-btn" data-action="home" title="回到桌面 (鼠标中键)">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="7" />
+              </svg>
+              <span>主页</span>
+            </button>
+            <button class="dock-btn" data-action="recents" title="最近任务">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="5" y="5" width="14" height="14" rx="2.5" />
+              </svg>
+              <span>多任务</span>
+            </button>
+
+            <div class="dock-divider"></div>
+
+            <button class="dock-btn" data-action="vol_up" title="音量 +">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 5L6 9H2v6h4l5 4V5zM19 9v6M16 12h6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span>音量+</span>
+            </button>
+            <button class="dock-btn" data-action="vol_down" title="音量 -">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 5L6 9H2v6h4l5 4V5zM16 12h6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span>音量-</span>
+            </button>
+            <button class="dock-btn" data-action="power" title="电源 / 锁屏 / 唤醒">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 3v9M18.36 6.64a9 9 0 1 1-12.73 0" stroke-linecap="round" />
+              </svg>
+              <span>电源</span>
+            </button>
+
+            <div class="dock-divider"></div>
+
+            <button class="dock-btn" data-action="rotate" title="旋转屏幕">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span>旋转</span>
+            </button>
+            <button class="dock-btn" data-action="notifications" title="下拉通知栏">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span>通知栏</span>
+            </button>
+            <button class="dock-btn" id="btn-screenshot" title="高清截图">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+              <span>截图</span>
+            </button>
+            <button class="dock-btn" data-drawer="clipboard" title="剪贴板同步">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="8" y="2" width="8" height="4" rx="1" />
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+              </svg>
+              <span>剪贴板</span>
+            </button>
+          </aside>
+        </div>
+
+        <!-- Subtle Gesture Hint Bar -->
+        <div class="hint-strip">
+          <span>左键拖拽滑屏</span>
+          <span>·</span>
+          <span>右键返回</span>
+          <span>·</span>
+          <span>Alt + 拖拽双指缩放</span>
+          <span>·</span>
+          <span>直接拖入 .apk 安装</span>
+          <span>·</span>
+          <span>Ctrl+K 输入中文</span>
+        </div>
+      </section>
+
+      <!-- Slide-over Drawer Panel -->
+      <aside id="side-drawer" class="drawer glass-panel hidden" aria-label="功能面板">
+        <div class="drawer-header">
+          <h3 id="drawer-title">应用</h3>
+          <button id="drawer-close" class="icon-btn" title="关闭面板">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6 6 18M6 6l12 12" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+        <div id="drawer-body" class="drawer-body"></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Quick Chinese / Text Input Modal -->
+  <div id="ime-modal" class="modal-backdrop hidden">
+    <div class="modal-card glass-panel">
+      <div class="modal-header">
+        <h4>发送到手机输入框</h4>
+        <button id="ime-modal-close" class="icon-btn">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <p class="muted small">支持中文、Emoji、邮箱、密码等任意字符，点击发送将直接粘贴到当前聚焦的手机输入框。</p>
+      <textarea id="ime-modal-input" rows="3" placeholder="在这里输入中文或粘贴文本… (Ctrl+Enter 发送)"></textarea>
+      <div class="modal-actions">
+        <label class="checkbox-inline">
+          <input type="checkbox" id="ime-modal-enter" />
+          <span>发送后自动按回车</span>
+        </label>
+        <div class="btn-group">
+          <button id="ime-modal-copy-only" class="btn btn-ghost btn-sm">仅写入剪贴板</button>
+          <button id="ime-modal-send" class="btn btn-primary btn-sm">发送并粘贴</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Drag & Drop APK Overlay -->
+  <div id="drop-overlay" class="drop-overlay hidden">
+    <div class="drop-box glass-panel">
+      <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="#34d399" stroke-width="1.8">
+        <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <h3>松开鼠标即可上传</h3>
+      <p class="muted">.apk 文件将自动安装到手机；其他文件将保存到 /sdcard/Download</p>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

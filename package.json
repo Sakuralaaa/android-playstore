@@ -1,0 +1,14 @@
+{
+  "name": "droidcloud",
+  "version": "1.0.0",
+  "description": "Self-hosted Cloud Android with Google Play & Low-Latency WebCodecs Console",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,5 @@
+.env
+node_modules/
+apks/*.apk
+*.log
+.DS_Store
