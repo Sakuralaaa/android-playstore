@@ -471,8 +471,18 @@ export class DrawerController {
       </div>
 
       <div class="btn-group">
+        <button id="sys-fix-google-btn" class="btn btn-emerald btn-sm" style="flex:1">一键修复 Google 登录</button>
+        <button id="sys-diag-btn" class="btn btn-subtle btn-sm" style="flex:1">网络自检</button>
+      </div>
+
+      <div class="btn-group">
         <button id="sys-reconnect-btn" class="btn btn-subtle btn-sm" style="flex:1">重连视频流</button>
         <button id="sys-reboot-btn" class="btn btn-danger btn-sm" style="flex:1">重启此手机</button>
+      </div>
+
+      <div id="sys-diag-box" class="terminal-box hidden">
+        <div class="terminal-header"><span>网络与 Google 服务自检报告</span></div>
+        <pre id="sys-diag-body" class="terminal-body" style="height:170px"></pre>
       </div>
 
       <div class="terminal-box">
@@ -480,6 +490,28 @@ export class DrawerController {
         <pre class="terminal-body" style="height:190px">${escapeHtml((st.logs || []).slice(-60).join('\n'))}</pre>
       </div>
     `;
+
+    this.bodyEl.querySelector('#sys-fix-google-btn').addEventListener('click', async () => {
+      try {
+        await this.api(`${this._base()}/fix-google`, { method: 'POST' });
+        this.toast('已重置 Wi-Fi 与 Play 商店缓存，请重试登录', 'success');
+      } catch (err) {
+        this.toast(err.message, 'error');
+      }
+    });
+
+    this.bodyEl.querySelector('#sys-diag-btn').addEventListener('click', async () => {
+      const box = this.bodyEl.querySelector('#sys-diag-box');
+      const body = this.bodyEl.querySelector('#sys-diag-body');
+      box.classList.remove('hidden');
+      body.textContent = '正在手机内部检测网络、DNS 与 Google 服务日志…';
+      try {
+        const res = await this.api(`${this._base()}/diagnose`, { method: 'POST' });
+        body.textContent = res.report || '无输出';
+      } catch (err) {
+        body.textContent = `自检失败：${err.message}`;
+      }
+    });
 
     this.bodyEl.querySelector('#sys-reconnect-btn').addEventListener('click', async () => {
       try {

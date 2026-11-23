@@ -68,7 +68,9 @@ function sanitizePhoneConfig(input, existing = null) {
   const customLocale = String(input.customLocale ?? existing?.customLocale ?? '').trim();
   const autoIpEnv = input.autoIpEnv !== undefined ? Boolean(input.autoIpEnv) : (existing?.autoIpEnv ?? true);
   const httpProxy = String(input.httpProxy ?? existing?.httpProxy ?? process.env.HTTP_PROXY_URL ?? '').trim();
-  const dnsServers = String(input.dnsServers ?? existing?.dnsServers ?? process.env.DNS_SERVERS ?? '8.8.8.8,1.1.1.1').trim() || '8.8.8.8,1.1.1.1';
+  const rawDns = String(input.dnsServers ?? existing?.dnsServers ?? process.env.DNS_SERVERS ?? '8.8.8.8').trim();
+  // netsimd in Emulator 35-37 can break on comma-separated --host-dns lists; keep a single IP or 'auto'
+  const dnsServers = rawDns.toLowerCase() === 'auto' ? 'auto' : (rawDns.split(',')[0].trim() || '8.8.8.8');
   const idleStopMinutes = Math.max(0, Math.min(1440, Number(input.idleStopMinutes ?? existing?.idleStopMinutes ?? 30) || 0));
 
   return {
@@ -719,9 +721,14 @@ export class PhoneManager extends EventEmitter {
       '-no-metrics',
       '-memory', String(cfg.ramMb),
       '-cores', String(cfg.cores),
-      '-dns-server', cfg.dnsServers,
       '-change-locale', resolvedLocale,
     ];
+    if (cfg.dnsServers && cfg.dnsServers !== 'auto') {
+      const primaryDns = cfg.dnsServers.split(',')[0].trim();
+      if (primaryDns) {
+        emuArgs.push('-dns-server', primaryDns);
+      }
+    }
     if (cfg.httpProxy) {
       emuArgs.push('-http-proxy', cfg.httpProxy);
     }
@@ -812,6 +819,8 @@ export class PhoneManager extends EventEmitter {
     await adb.shell('settings put global stay_on_while_plugged_in 7').catch(() => {});
     await adb.shell('settings put system screen_off_timeout 2147483647').catch(() => {});
     await adb.shell('svc power stayon true').catch(() => {});
+    await adb.shell('svc wifi enable').catch(() => {});
+    await adb.shell('settings put global auto_time 1').catch(() => {});
     await adb.shell(`settings put global window_animation_scale ${this.animationScale}`).catch(() => {});
     await adb.shell(`settings put global transition_animation_scale ${this.animationScale}`).catch(() => {});
     await adb.shell(`settings put global animator_duration_scale ${this.animationScale}`).catch(() => {});
@@ -866,6 +875,38 @@ export class PhoneManager extends EventEmitter {
     }
     this._emitPhonesChanged();
     return geo;
+  }
+
+  async diagnosePhone(id) {
+    const rt = this.runtimes.get(id);
+    if (!rt || rt.status !== 'running' || !rt.adb) {
+      throw Object.assign(new Error('云手机未运行'), { statusCode: 409 });
+    }
+    const cmd = [
+      'echo "=== DATE ==="; date -u',
+      'echo "=== DNS ==="; getprop net.dns1; getprop net.dns2',
+      'echo "=== WIFI ==="; dumpsys wifi | grep -E "Wi-Fi is|mNetworkInfo|SSID:" | head -n 6',
+      'echo "=== PING 8.8.8.8 ==="; ping -c 2 -W 2 8.8.8.8 2>&1 || true',
+      'echo "=== DNS RESOLVE ==="; ping -c 2 -W 2 accounts.google.com 2>&1 || true',
+      'echo "=== GMS LOGS ==="; logcat -d -t 200 | grep -iE "Auth|GLSUser|Checkin|PlayStore|NetworkSecurity|SSL|UnknownHost" | tail -n 20 || true',
+    ].join('; ');
+    const report = await rt.adb.shell(cmd, { timeout: 15000 });
+    return { report };
+  }
+
+  async fixGoogleServices(id) {
+    const rt = this.runtimes.get(id);
+    if (!rt || rt.status !== 'running' || !rt.adb) {
+      throw Object.assign(new Error('云手机未运行'), { statusCode: 409 });
+    }
+    this._log(id, '正在重置 Wi-Fi、同步系统时间并清理 Google Play 缓存…');
+    await rt.adb.shell('svc wifi disable; sleep 1; svc wifi enable').catch(() => {});
+    await rt.adb.shell('settings put global auto_time 1').catch(() => {});
+    await rt.adb.shell('pm clear com.android.vending').catch(() => {});
+    await rt.adb.shell('am force-stop com.google.android.gms').catch(() => {});
+    await rt.adb.shell('am broadcast -a android.server.checkin.CHECKIN').catch(() => {});
+    this._log(id, 'Google 服务缓存与网络已重置，请重新打开 Play 商店尝试登录');
+    return { ok: true };
   }
 
   async stopPhone(id) {

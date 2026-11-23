@@ -568,6 +568,16 @@ export function createDroidCloudServer(options = {}) {
       return sendJson(res, 200, { ok: true });
     }
 
+    if (sub === '/diagnose' && req.method === 'POST') {
+      const result = await phones.diagnosePhone(phoneId);
+      return sendJson(res, 200, result);
+    }
+
+    if (sub === '/fix-google' && req.method === 'POST') {
+      const result = await phones.fixGoogleServices(phoneId);
+      return sendJson(res, 200, result);
+    }
+
     return sendJson(res, 404, { error: 'API 路径不存在' });
   }
 

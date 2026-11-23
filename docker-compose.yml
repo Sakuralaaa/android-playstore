@@ -16,7 +16,7 @@ services:
       DATA_SIZE: "${DATA_SIZE:-16G}"
       SCREEN_PRESET: "${SCREEN_PRESET:-balanced}"      # smooth | balanced | hd
       STREAM_PRESET: "${STREAM_PRESET:-balanced}"      # smooth | balanced | ultra
-      DNS_SERVERS: "${DNS_SERVERS:-8.8.8.8,1.1.1.1}"
+      DNS_SERVERS: "${DNS_SERVERS:-8.8.8.8}"
       # 默认留空：容器启动后所有手机处于关机待命（几乎零 CPU/内存占用），按需开机
       # 如需容器启动时自动打开第一台手机，可设为 first
       AUTO_START_PHONE: "${AUTO_START_PHONE:-}"
