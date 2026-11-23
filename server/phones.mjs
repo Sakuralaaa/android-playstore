@@ -69,9 +69,9 @@ function sanitizePhoneConfig(input, existing = null) {
   const autoIpEnv = input.autoIpEnv !== undefined ? Boolean(input.autoIpEnv) : (existing?.autoIpEnv ?? true);
   const ecoMode = input.ecoMode !== undefined ? Boolean(input.ecoMode) : (existing?.ecoMode ?? true);
   const httpProxy = String(input.httpProxy ?? existing?.httpProxy ?? process.env.HTTP_PROXY_URL ?? '').trim();
-  const rawDns = String(input.dnsServers ?? existing?.dnsServers ?? process.env.DNS_SERVERS ?? '8.8.8.8').trim();
-  // netsimd in Emulator 35-37 can break on comma-separated --host-dns lists; keep a single IP or 'auto'
-  const dnsServers = rawDns.toLowerCase() === 'auto' ? 'auto' : (rawDns.split(',')[0].trim() || '8.8.8.8');
+  const rawDns = String(input.dnsServers ?? existing?.dnsServers ?? process.env.DNS_SERVERS ?? 'auto').trim();
+  // Default 'auto' uses Docker's native DNS (127.0.0.11), which is required for SLIRP/netsimd inside containers
+  const dnsServers = !rawDns || rawDns.toLowerCase() === 'auto' ? 'auto' : rawDns.split(',')[0].trim();
   const idleStopMinutes = Math.max(0, Math.min(1440, Number(input.idleStopMinutes ?? existing?.idleStopMinutes ?? 30) || 0));
 
   return {
@@ -895,6 +895,7 @@ export class PhoneManager extends EventEmitter {
     await adb.shell('settings put system screen_off_timeout 2147483647').catch(() => {});
     await adb.shell('svc power stayon true').catch(() => {});
     await adb.shell('svc wifi enable').catch(() => {});
+    await adb.shell('cmd wifi connect-network AndroidWifi open').catch(() => {});
     await adb.shell('settings put global auto_time 1').catch(() => {});
     await adb.shell('settings put global cached_apps_freezer enabled').catch(() => {});
     await adb.shell(`settings put global window_animation_scale ${this.animationScale}`).catch(() => {});
