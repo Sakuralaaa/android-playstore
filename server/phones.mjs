@@ -16,8 +16,41 @@ const MAX_LOGS_PER_PHONE = 200;
 export const ANDROID_VERSIONS = [
   { version: '16', api: 'android-36', label: 'Android 16 (最新)' },
   { version: '15', api: 'android-35', label: 'Android 15 (稳定)' },
-  { version: '14', api: 'android-34', label: 'Android 14 (兼容)' },
+  { version: '14', api: 'android-34', label: 'Android 14 (主流)' },
+  { version: '13', api: 'android-33', label: 'Android 13 (经典)' },
+  { version: '11', api: 'android-30', label: 'Android 11 (轻量兼容)' },
+  { version: '10', api: 'android-29', label: 'Android 10 (怀旧轻量)' },
+  { version: '9', api: 'android-28', label: 'Android 9 Pie (极简低占用)' },
 ];
+
+export const REDROID_PRESETS = [
+  { id: 'redroid-14', version: '14', image: 'redroid/redroid:14.0.0-latest', label: 'Redroid Android 14 (官方)' },
+  { id: 'redroid-13', version: '13', image: 'redroid/redroid:13.0.0-latest', label: 'Redroid Android 13 (官方)' },
+  { id: 'redroid-12', version: '12', image: 'redroid/redroid:12.0.0-latest', label: 'Redroid Android 12 (官方)' },
+  { id: 'redroid-11', version: '11', image: 'redroid/redroid:11.0.0-latest', label: 'Redroid Android 11 (官方轻量)' },
+  { id: 'redroid-9', version: '9', image: 'redroid/redroid:9.0.0-latest', label: 'Redroid Android 9 (极简)' },
+  { id: 'redroid-11-gapps', version: '11', image: 'teddysun/redroid:11.0.0-gapps', label: 'Redroid Android 11 + GApps (社区)' },
+  { id: 'redroid-12-gapps', version: '12', image: 'teddysun/redroid:12.0.0-gapps', label: 'Redroid Android 12 + GApps (社区)' },
+  { id: 'redroid-13-gapps', version: '13', image: 'teddysun/redroid:13.0.0-gapps', label: 'Redroid Android 13 + GApps (社区)' },
+  { id: 'custom-adb', version: '14', image: '', label: '自定义 Redroid / 外部 ADB 设备' },
+];
+
+const ADB_ADDRESS_RE = /^[a-zA-Z0-9._-]+:\d{1,5}$/;
+
+export function normalizeAdbAddress(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (!ADB_ADDRESS_RE.test(s)) {
+    throw Object.assign(new Error('无效的 ADB 地址，格式应为 host:port（例如 redroid:5555 或 127.0.0.1:5555）'), {
+      statusCode: 400,
+    });
+  }
+  const port = Number(s.split(':')[1]);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw Object.assign(new Error('ADB 端口号必须在 1-65535 之间'), { statusCode: 400 });
+  }
+  return s;
+}
 
 export const DEVICE_PROFILES = [
   { id: 'pixel_8', label: 'Google Pixel 8', desc: '均衡旗舰 6.2"' },
@@ -50,8 +83,34 @@ function apiForVersion(version) {
 
 function sanitizePhoneConfig(input, existing = null) {
   const name = String(input.name ?? existing?.name ?? '我的云手机').trim().slice(0, 40) || '我的云手机';
-  const versionRaw = String(input.androidVersion ?? existing?.androidVersion ?? process.env.ANDROID_VERSION ?? '16');
-  const androidVersion = ANDROID_VERSIONS.some((v) => v.version === versionRaw) ? versionRaw : '16';
+  const engineRaw = String(input.engine ?? existing?.engine ?? 'emulator').trim().toLowerCase();
+  const engine = engineRaw === 'redroid' ? 'redroid' : 'emulator';
+
+  const redroidPresetRaw = String(input.redroidPreset ?? existing?.redroidPreset ?? 'redroid-11-gapps').trim();
+  const presetObj = REDROID_PRESETS.find((p) => p.id === redroidPresetRaw) || REDROID_PRESETS[0];
+  const redroidPreset = engine === 'redroid' ? presetObj.id : '';
+  const redroidImage =
+    engine === 'redroid'
+      ? String(input.redroidImage ?? existing?.redroidImage ?? presetObj.image ?? '').trim()
+      : '';
+  const adbAddress =
+    engine === 'redroid'
+      ? normalizeAdbAddress(input.adbAddress ?? existing?.adbAddress ?? '')
+      : '';
+  if (engine === 'redroid' && !adbAddress) {
+    throw Object.assign(new Error('Redroid / 外部 ADB 模式必须填写 ADB 连接地址（例如 redroid:5555）'), {
+      statusCode: 400,
+    });
+  }
+
+  const versionFallback = engine === 'redroid' ? presetObj.version : process.env.ANDROID_VERSION ?? '16';
+  const versionRaw = String(input.androidVersion ?? existing?.androidVersion ?? versionFallback);
+  const androidVersion =
+    engine === 'redroid'
+      ? (versionRaw.replace(/[^0-9.]/g, '') || presetObj.version)
+      : ANDROID_VERSIONS.some((v) => v.version === versionRaw)
+        ? versionRaw
+        : '16';
   const deviceRaw = String(input.device ?? existing?.device ?? process.env.DEVICE ?? 'pixel_8');
   const device = DEVICE_PROFILES.some((d) => d.id === deviceRaw) ? deviceRaw : 'pixel_7';
   const screenRaw = String(input.screenPreset ?? existing?.screenPreset ?? process.env.SCREEN_PRESET ?? 'balanced');
@@ -76,8 +135,12 @@ function sanitizePhoneConfig(input, existing = null) {
 
   return {
     name,
+    engine,
+    adbAddress,
+    redroidPreset,
+    redroidImage,
     androidVersion,
-    imgTag: 'google_apis_playstore',
+    imgTag: engine === 'redroid' ? 'redroid' : 'google_apis_playstore',
     abi: 'x86_64',
     device,
     screenPreset,
@@ -124,6 +187,7 @@ export class PhoneManager extends EventEmitter {
 
     this._loadStore();
     this._importExistingAvds();
+    this._importRedroidTargets();
     this._ensureAtLeastOneDefault();
   }
 
@@ -191,7 +255,7 @@ export class PhoneManager extends EventEmitter {
         const avdDir = path.join(this.avdDirRoot, `${avdName}.avd`);
         if (!fs.existsSync(avdDir)) continue;
 
-        const verMatch = avdName.match(/a(1[4567])/);
+        const verMatch = avdName.match(/a(9|1[0-7])/);
         const androidVersion = verMatch ? verMatch[1] : process.env.ANDROID_VERSION || '16';
         const id = `phone-${crypto.createHash('md5').update(avdName).digest('hex').slice(0, 8)}`;
         const record = {
@@ -215,6 +279,50 @@ export class PhoneManager extends EventEmitter {
     } catch {
       // ignore
     }
+  }
+
+  _importRedroidTargets() {
+    const raw = String(process.env.REDROID_TARGETS || '').trim();
+    if (!raw) return;
+    const existingAddrs = new Set(
+      Array.from(this.phones.values())
+        .filter((p) => p.engine === 'redroid')
+        .map((p) => p.adbAddress)
+    );
+    let added = false;
+    for (const entry of raw.split(',')) {
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      const eqIdx = trimmed.indexOf('=');
+      const name = eqIdx > 0 ? trimmed.slice(0, eqIdx).trim() : `Redroid (${trimmed})`;
+      const addrRaw = eqIdx > 0 ? trimmed.slice(eqIdx + 1).trim() : trimmed;
+      try {
+        const adbAddress = normalizeAdbAddress(addrRaw);
+        if (!adbAddress || existingAddrs.has(adbAddress)) continue;
+        const id = `redroid-${crypto.createHash('md5').update(adbAddress).digest('hex').slice(0, 8)}`;
+        const record = {
+          id,
+          avdName: id,
+          createdAt: Date.now(),
+          lastGeo: null,
+          ...sanitizePhoneConfig({
+            name,
+            engine: 'redroid',
+            adbAddress,
+            redroidPreset: 'custom-adb',
+            redroidImage: process.env.REDROID_IMAGE || '',
+            androidVersion: '11',
+          }),
+        };
+        this.phones.set(id, record);
+        this._initRuntime(id);
+        existingAddrs.add(adbAddress);
+        added = true;
+      } catch {
+        // skip invalid entries
+      }
+    }
+    if (added) this._saveStore();
   }
 
   _ensureAtLeastOneDefault() {
@@ -274,6 +382,7 @@ export class PhoneManager extends EventEmitter {
     });
     return {
       androidVersions: versions,
+      redroidPresets: REDROID_PRESETS,
       devices: DEVICE_PROFILES,
       screenPresets: SCREEN_PRESETS,
       qualityPresets: QUALITY_PRESETS,
@@ -324,9 +433,9 @@ export class PhoneManager extends EventEmitter {
   }
 
   createPhone(input = {}) {
-    const id = `phone-${crypto.randomBytes(4).toString('hex')}`;
     const clean = sanitizePhoneConfig(input);
-    const avdName = `dc-${id}-a${clean.androidVersion}`;
+    const id = `${clean.engine === 'redroid' ? 'redroid' : 'phone'}-${crypto.randomBytes(4).toString('hex')}`;
+    const avdName = clean.engine === 'redroid' ? id : `dc-${id}-a${clean.androidVersion}`;
     const record = {
       id,
       avdName,
@@ -347,9 +456,9 @@ export class PhoneManager extends EventEmitter {
       throw Object.assign(new Error('找不到指定的云手机'), { statusCode: 404 });
     }
     const rt = this._initRuntime(id);
-    const updatedCfg = sanitizePhoneConfig(patch, existing);
+    const updatedCfg = sanitizePhoneConfig({ ...patch, engine: existing.engine || 'emulator' }, existing);
     // Do not change Android version of an already-created AVD in-place
-    if (fs.existsSync(path.join(this.avdDirRoot, `${existing.avdName}.avd`))) {
+    if (existing.engine !== 'redroid' && fs.existsSync(path.join(this.avdDirRoot, `${existing.avdName}.avd`))) {
       updatedCfg.androidVersion = existing.androidVersion;
     }
     const next = { ...existing, ...updatedCfg };
@@ -370,11 +479,13 @@ export class PhoneManager extends EventEmitter {
       throw Object.assign(new Error('找不到指定的云手机'), { statusCode: 404 });
     }
     await this.stopPhone(id);
-    // Remove AVD files to free disk space
-    const avdIni = path.join(this.avdDirRoot, `${cfg.avdName}.ini`);
-    const avdDir = path.join(this.avdDirRoot, `${cfg.avdName}.avd`);
-    await fs.promises.rm(avdIni, { force: true }).catch(() => {});
-    await fs.promises.rm(avdDir, { recursive: true, force: true }).catch(() => {});
+    if (cfg.engine !== 'redroid') {
+      // Remove AVD files to free disk space
+      const avdIni = path.join(this.avdDirRoot, `${cfg.avdName}.ini`);
+      const avdDir = path.join(this.avdDirRoot, `${cfg.avdName}.avd`);
+      await fs.promises.rm(avdIni, { force: true }).catch(() => {});
+      await fs.promises.rm(avdDir, { recursive: true, force: true }).catch(() => {});
+    }
 
     this.phones.delete(id);
     this.runtimes.delete(id);
@@ -742,9 +853,87 @@ export class PhoneManager extends EventEmitter {
     return this.getPhoneSummary(id);
   }
 
+  _resolveAdbBin() {
+    const sdkAdb = path.join(this.sdkRoot, 'platform-tools', 'adb');
+    if (fs.existsSync(sdkAdb)) return sdkAdb;
+    return 'adb';
+  }
+
+  async _bootRedroid(id, cfg, rt) {
+    if (!cfg.adbAddress) {
+      throw new Error('未配置 Redroid / 外部 ADB 地址');
+    }
+    const adbBin = this._resolveAdbBin();
+    const { scrcpyPort } = this._allocatePorts();
+    rt.scrcpyPort = scrcpyPort;
+
+    this._setProgress(id, {
+      stage: 'booting',
+      progress: 35,
+      message: `正在连接 Redroid ADB (${cfg.adbAddress})…`,
+    });
+    this._log(id, `连接 Redroid / 外部 ADB: ${cfg.adbAddress} (bin=${adbBin})`);
+
+    await execFileAsync(adbBin, ['start-server'], { timeout: 10_000 }).catch(() => {});
+    const { stdout: connOut, stderr: connErr } = await execFileAsync(adbBin, ['connect', cfg.adbAddress], {
+      timeout: 15_000,
+    });
+    const connMsg = `${connOut || ''} ${connErr || ''}`.trim();
+    this._log(id, `adb connect: ${connMsg}`);
+
+    const adb = new AdbClient({ adbBin, serial: cfg.adbAddress });
+    rt.adb = adb;
+
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      if (rt.status !== 'starting') return;
+      if (await adb.isDeviceReady()) break;
+      await execFileAsync(adbBin, ['connect', cfg.adbAddress], { timeout: 6_000 }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    if (!(await adb.isDeviceReady())) {
+      throw new Error(`无法连接到 Redroid / ADB 设备 ${cfg.adbAddress}，请确认目标容器已启动并监听 5555 端口`);
+    }
+
+    // Auto-detect Android version and exit geo
+    const rel = (await adb.shell('getprop ro.build.version.release').catch(() => '')).trim();
+    if (rel && rel !== cfg.androidVersion) {
+      cfg.androidVersion = rel;
+      this._saveStore();
+    }
+    if (cfg.autoIpEnv) {
+      const geo = await this.geoDetector({ httpProxy: cfg.httpProxy }).catch(() => null);
+      if (geo) {
+        rt.geo = geo;
+        cfg.lastGeo = geo;
+        this._saveStore();
+      }
+    }
+
+    await adb.shell('settings put global stay_on_while_plugged_in 7').catch(() => {});
+    await adb.shell('wm dismiss-keyguard').catch(() => {});
+
+    rt.lastActiveAt = Date.now();
+    rt.screenAsleep = false;
+    this._setProgress(id, {
+      status: 'running',
+      stage: 'ready',
+      progress: 100,
+      message: `Redroid 已连接 (${cfg.adbAddress})`,
+      error: null,
+    });
+    if (rt.viewers.size > 0) {
+      this._ensureScrcpyStarted(id);
+    }
+    this._log(id, `Redroid 云手机已就绪 (Android ${cfg.androidVersion})`);
+  }
+
   async _bootPipeline(id, cfg, rt) {
+    if (cfg.engine === 'redroid') {
+      return this._bootRedroid(id, cfg, rt);
+    }
     if (!fs.existsSync('/dev/kvm')) {
-      throw new Error('宿主机未挂载 /dev/kvm，无法启动 KVM 加速模拟器');
+      throw new Error('宿主机未挂载 /dev/kvm，无法启动官方 KVM 模拟器（可改用 Redroid 容器模式）');
     }
 
     await this._ensureSdkAndImage(id, cfg);
@@ -974,6 +1163,7 @@ export class PhoneManager extends EventEmitter {
   }
 
   async stopPhone(id) {
+    const cfg = this.phones.get(id);
     const rt = this.runtimes.get(id);
     if (!rt) return;
     if (rt.status === 'stopped') return;
@@ -982,14 +1172,31 @@ export class PhoneManager extends EventEmitter {
       status: 'stopping',
       stage: 'stopping',
       progress: 0,
-      message: '正在保存快照并安全关机…',
+      message: cfg?.engine === 'redroid' ? '正在断开 Redroid 连接…' : '正在保存快照并安全关机…',
     });
-    this._log(id, '正在保存 QuickBoot 快照并关机…');
 
     if (rt.scrcpy) {
       rt.scrcpy.stop();
       rt.scrcpy = null;
     }
+
+    if (cfg?.engine === 'redroid') {
+      if (cfg.adbAddress) {
+        const adbBin = this._resolveAdbBin();
+        await execFileAsync(adbBin, ['disconnect', cfg.adbAddress], { timeout: 5_000 }).catch(() => {});
+      }
+      this._cleanupRuntime(id);
+      this._setProgress(id, {
+        status: 'stopped',
+        stage: 'stopped',
+        progress: 0,
+        message: '已断开 Redroid 连接，点击一键开机可重新接入',
+        error: null,
+      });
+      return;
+    }
+
+    this._log(id, '正在保存 QuickBoot 快照并关机…');
 
     const proc = rt.proc;
     if (proc && !proc.killed) {

@@ -461,7 +461,7 @@ export class DrawerController {
       <div>
         <div class="section-label">当前云手机环境</div>
         <div class="kv-list">
-          <div class="kv-row"><span>机型 / 版本</span><span>${escapeHtml(phone.device || '--')} · Android ${escapeHtml(phone.androidVersion || '--')}</span></div>
+          <div class="kv-row"><span>引擎 / 版本</span><span>${escapeHtml(phone.engine === 'redroid' ? `Redroid (${phone.adbAddress || 'ADB'})` : (phone.device || '--'))} · Android ${escapeHtml(phone.androidVersion || '--')}</span></div>
           <div class="kv-row"><span>系统语言</span><span>${escapeHtml(phone.resolvedLocale || phone.localeMode || 'zh-CN')}</span></div>
           <div class="kv-row"><span>同步时区</span><span>${escapeHtml(phone.resolvedTz || phone.geo?.timezone || '--')}</span></div>
           <div class="kv-row"><span>出口 IP</span><span>${escapeHtml(phone.geo ? `${phone.geo.ip} (${phone.geo.countryCode})` : '未检测')}</span></div>

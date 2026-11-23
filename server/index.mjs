@@ -100,7 +100,7 @@ function buildApiDocs(baseUrl) {
     baseUrl,
     endpoints: [
       { method: 'GET', path: '/api/phones', desc: 'List all cloud phones, states, IP geo, and host metrics' },
-      { method: 'POST', path: '/api/phones', desc: 'Create a new cloud phone', body: { name: 'string', androidVersion: '14|15|16', device: 'pixel_8', screenPreset: 'smooth|balanced|hd', ramMb: 3072, cores: 3, localeMode: 'zh-CN|auto_ip|en-US', autoIpEnv: true, ecoMode: true, httpProxy: '', idleStopMinutes: 30, autoStart: false } },
+      { method: 'POST', path: '/api/phones', desc: 'Create a new cloud phone (official KVM emulator or Redroid/ADB)', body: { name: 'string', engine: 'emulator|redroid', androidVersion: '9|10|11|13|14|15|16', device: 'pixel_8', adbAddress: 'redroid:5555', redroidPreset: 'redroid-11-gapps', screenPreset: 'smooth|balanced|hd', ramMb: 3072, cores: 3, localeMode: 'zh-CN|auto_ip|en-US', autoIpEnv: true, ecoMode: true, httpProxy: '', idleStopMinutes: 30, autoStart: false } },
       { method: 'POST', path: '/api/phones/:id/start', desc: 'Boot phone on demand' },
       { method: 'POST', path: '/api/phones/:id/stop', desc: 'Save snapshot & power off phone' },
       { method: 'GET', path: '/api/phones/:id/screen-info', desc: 'Get screen width, height, and current focused app/activity' },

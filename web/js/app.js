@@ -231,20 +231,28 @@ function renderDashboard() {
           <button class="btn btn-ghost btn-sm" data-delete="${escapeHtml(p.id)}" title="删除云手机">删除</button>
         `;
 
+      const isRedroid = p.engine === 'redroid';
+      const subtitle = isRedroid
+        ? `Redroid / ADB · Android ${p.androidVersion || '--'}${p.adbAddress ? ` · ${p.adbAddress}` : ''}`
+        : `${deviceLabel(p.device)} · Android ${p.androidVersion} · Google Play`;
+      const specTags = isRedroid
+        ? `<span class="phone-tag">Redroid 容器</span>${p.redroidImage ? `<span class="phone-tag">${escapeHtml(p.redroidImage)}</span>` : ''}`
+        : `<span class="phone-tag">${escapeHtml(screenLabel(p.screenPreset))}</span>
+            <span class="phone-tag">${p.cores}核 / ${(p.ramMb / 1024).toFixed(p.ramMb % 1024 === 0 ? 0 : 1)}G</span>
+            <span class="phone-tag">语言: ${escapeHtml(localeBadgeText(p))}</span>`;
+
       return `
         <article class="phone-card glass-panel ${isRunning ? 'card-running' : ''}">
           <div class="phone-card-head">
             <div>
               <div class="phone-card-title">${escapeHtml(p.name)}</div>
-              <div class="phone-card-sub">${escapeHtml(deviceLabel(p.device))} · Android ${escapeHtml(p.androidVersion)} · Google Play</div>
+              <div class="phone-card-sub">${escapeHtml(subtitle)}</div>
             </div>
             ${statusBadge}
           </div>
 
           <div class="phone-tags">
-            <span class="phone-tag">${escapeHtml(screenLabel(p.screenPreset))}</span>
-            <span class="phone-tag">${p.cores}核 / ${(p.ramMb / 1024).toFixed(p.ramMb % 1024 === 0 ? 0 : 1)}G</span>
-            <span class="phone-tag">语言: ${escapeHtml(localeBadgeText(p))}</span>
+            ${specTags}
             ${geoTag}
             ${proxyTag}
             ${idleTag}
@@ -336,7 +344,34 @@ function populateModalSelects() {
   locSel.innerHTML = appState.catalog.localeOptions
     .map((l) => `<option value="${l.id}">${escapeHtml(l.label)}</option>`)
     .join('');
+
+  const redroidSel = document.getElementById('pf-redroid-preset');
+  if (redroidSel && appState.catalog.redroidPresets) {
+    redroidSel.innerHTML = appState.catalog.redroidPresets
+      .map((r) => `<option value="${r.id}">${escapeHtml(r.label)}</option>`)
+      .join('');
+  }
 }
+
+function syncPhoneModalEngineUI() {
+  const engine = document.getElementById('pf-engine').value;
+  document.querySelectorAll('#phone-form [data-engine-group]').forEach((el) => {
+    el.classList.toggle('hidden', el.dataset.engineGroup !== engine);
+  });
+  const adbInput = document.getElementById('pf-adb-address');
+  if (adbInput) adbInput.required = engine === 'redroid';
+
+  const cmdEl = document.getElementById('pf-redroid-cmd');
+  if (cmdEl && engine === 'redroid') {
+    const presetId = document.getElementById('pf-redroid-preset')?.value;
+    const preset = (appState.catalog?.redroidPresets || []).find((p) => p.id === presetId);
+    const img = preset?.image || 'redroid/redroid:11.0.0-latest';
+    cmdEl.textContent = `docker run -d --name redroid --privileged -p 5555:5555 \\\n  -v redroid-data:/data ${img} \\\n  androidboot.redroid_gpu_mode=guest androidboot.redroid_width=720 androidboot.redroid_height=1600 androidboot.redroid_dpi=320`;
+  }
+}
+
+document.getElementById('pf-engine')?.addEventListener('change', syncPhoneModalEngineUI);
+document.getElementById('pf-redroid-preset')?.addEventListener('change', syncPhoneModalEngineUI);
 
 function openPhoneModal(editId = null) {
   populateModalSelects();
@@ -344,6 +379,8 @@ function openPhoneModal(editId = null) {
   phoneModalTitle.textContent = editing ? `配置云手机 · ${editing.name}` : '新建云手机';
   document.getElementById('pf-id').value = editing ? editing.id : '';
   document.getElementById('pf-name').value = editing ? editing.name : `云手机 #${appState.phones.length + 1}`;
+  document.getElementById('pf-engine').value = editing ? (editing.engine || 'emulator') : 'emulator';
+  document.getElementById('pf-engine').disabled = Boolean(editing);
   document.getElementById('pf-version').value = editing ? editing.androidVersion : '16';
   document.getElementById('pf-version').disabled = Boolean(editing);
   document.getElementById('pf-device').value = editing ? editing.device : 'pixel_8';
@@ -354,11 +391,14 @@ function openPhoneModal(editId = null) {
   document.getElementById('pf-idle').value = String(editing ? editing.idleStopMinutes : 30);
   document.getElementById('pf-storage').value = editing ? editing.dataSize : '16G';
   document.getElementById('pf-proxy').value = editing ? editing.httpProxy || '' : '';
+  document.getElementById('pf-redroid-preset').value = editing?.redroidPreset || 'redroid-11-gapps';
+  document.getElementById('pf-adb-address').value = editing?.adbAddress || '';
   document.getElementById('pf-auto-ip').checked = editing ? Boolean(editing.autoIpEnv) : true;
   document.getElementById('pf-eco-mode').checked = editing ? editing.ecoMode !== false : true;
   document.getElementById('pf-hint').textContent = editing
-    ? '修改配置后，将在下次开机时生效'
-    : '新建后默认处于关机状态，按需开机不占 CPU 和内存';
+    ? '修改配置后，将在下次开机/重连时生效'
+    : '官方 KVM 支持 Android 9–16；Redroid 模式可直连任意 Docker 容器或 ARM64 云手机';
+  syncPhoneModalEngineUI();
   phoneModal.classList.remove('hidden');
 }
 
@@ -376,9 +416,13 @@ phoneModal.addEventListener('click', (e) => {
 phoneForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const id = document.getElementById('pf-id').value;
+  const engine = document.getElementById('pf-engine').value;
+  const presetId = document.getElementById('pf-redroid-preset').value;
+  const presetObj = (appState.catalog?.redroidPresets || []).find((p) => p.id === presetId);
   const payload = {
     name: document.getElementById('pf-name').value.trim(),
-    androidVersion: document.getElementById('pf-version').value,
+    engine,
+    androidVersion: engine === 'redroid' ? (presetObj?.version || '11') : document.getElementById('pf-version').value,
     device: document.getElementById('pf-device').value,
     screenPreset: document.getElementById('pf-screen').value,
     localeMode: document.getElementById('pf-locale').value,
@@ -387,6 +431,9 @@ phoneForm.addEventListener('submit', async (e) => {
     idleStopMinutes: Number(document.getElementById('pf-idle').value),
     dataSize: document.getElementById('pf-storage').value,
     httpProxy: document.getElementById('pf-proxy').value.trim(),
+    redroidPreset: engine === 'redroid' ? presetId : '',
+    redroidImage: engine === 'redroid' ? (presetObj?.image || '') : '',
+    adbAddress: engine === 'redroid' ? document.getElementById('pf-adb-address').value.trim() : '',
     autoIpEnv: document.getElementById('pf-auto-ip').checked,
     ecoMode: document.getElementById('pf-eco-mode').checked,
   };

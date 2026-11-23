@@ -236,14 +236,20 @@ test('End-to-end Multi-Phone Fleet CRUD + Auth + WebSocket overview', async () =
     assert.equal(login.status, 200);
     const cookieHeader = login.headers.get('set-cookie').split(';')[0];
 
-    // 4. Create second phone (Android 15, Pixel 9, auto_ip language, 15m idle stop)
+    // 4. Create official Android 9 & Android 15 phones, plus a Redroid ADB phone
+    const catRes = await fetch(`${baseUrl}/api/phones`, { headers: { Cookie: cookieHeader } });
+    const catJson = await catRes.json();
+    const versionList = catJson.catalog.androidVersions.map((v) => v.version);
+    assert.ok(versionList.includes('9') && versionList.includes('11') && versionList.includes('15') && versionList.includes('16'));
+    assert.ok(Array.isArray(catJson.catalog.redroidPresets) && catJson.catalog.redroidPresets.length >= 5);
+
     const createRes = await fetch(`${baseUrl}/api/phones`, {
       method: 'POST',
       headers: { Cookie: cookieHeader, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: '美区注册机',
-        androidVersion: '15',
-        device: 'pixel_9',
+        name: 'Android 9 兼容机',
+        androidVersion: '9',
+        device: 'pixel_7',
         screenPreset: 'smooth',
         localeMode: 'auto_ip',
         autoIpEnv: true,
@@ -252,10 +258,39 @@ test('End-to-end Multi-Phone Fleet CRUD + Auth + WebSocket overview', async () =
     });
     assert.equal(createRes.status, 201);
     const { phone: created } = await createRes.json();
-    assert.equal(created.name, '美区注册机');
-    assert.equal(created.androidVersion, '15');
-    assert.equal(created.device, 'pixel_9');
+    assert.equal(created.name, 'Android 9 兼容机');
+    assert.equal(created.engine, 'emulator');
+    assert.equal(created.androidVersion, '9');
+    assert.equal(created.device, 'pixel_7');
     assert.equal(created.status, 'stopped');
+
+    // Create Redroid ADB phone & verify bad ADB address is rejected
+    const badRedroid = await fetch(`${baseUrl}/api/phones`, {
+      method: 'POST',
+      headers: { Cookie: cookieHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Bad', engine: 'redroid', adbAddress: 'bad;rm -rf /' }),
+    });
+    assert.equal(badRedroid.status, 400);
+
+    const redroidRes = await fetch(`${baseUrl}/api/phones`, {
+      method: 'POST',
+      headers: { Cookie: cookieHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Redroid 11',
+        engine: 'redroid',
+        redroidPreset: 'redroid-11-gapps',
+        adbAddress: 'redroid:5555',
+      }),
+    });
+    assert.equal(redroidRes.status, 201);
+    const { phone: redroidPhone } = await redroidRes.json();
+    assert.equal(redroidPhone.engine, 'redroid');
+    assert.equal(redroidPhone.adbAddress, 'redroid:5555');
+    assert.equal(redroidPhone.androidVersion, '11');
+    await fetch(`${baseUrl}/api/phones/${redroidPhone.id}`, {
+      method: 'DELETE',
+      headers: { Cookie: cookieHeader },
+    });
 
     // 5. Update phone config
     const patchRes = await fetch(`${baseUrl}/api/phones/${created.id}`, {

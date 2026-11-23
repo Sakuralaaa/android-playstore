@@ -319,40 +319,63 @@
         <div class="form-grid">
           <div class="form-field form-full">
             <label class="field-label" for="pf-name">云手机名称</label>
-            <input id="pf-name" type="text" placeholder="例如：主力美区机 / 备用日区 Pixel 8" required />
+            <input id="pf-name" type="text" placeholder="例如：主力美区机 / Android 9 兼容机 / Redroid 11" required />
           </div>
 
-          <div class="form-field">
+          <div class="form-field form-full">
+            <label class="field-label" for="pf-engine">运行引擎</label>
+            <select id="pf-engine">
+              <option value="emulator">官方 KVM 模拟器（Android 9–16 · 正版 Google Play）</option>
+              <option value="redroid">Redroid / 外部 ADB 容器（无需 KVM · 支持 ARM64 / 社区镜像）</option>
+            </select>
+          </div>
+
+          <div class="form-field" data-engine-group="emulator">
             <label class="field-label" for="pf-version">Android 版本（正版 Google Play）</label>
             <select id="pf-version"></select>
           </div>
 
-          <div class="form-field">
+          <div class="form-field" data-engine-group="emulator">
             <label class="field-label" for="pf-device">手机型号</label>
             <select id="pf-device"></select>
           </div>
 
-          <div class="form-field">
+          <div class="form-field hidden" data-engine-group="redroid">
+            <label class="field-label" for="pf-redroid-preset">Redroid 镜像预设</label>
+            <select id="pf-redroid-preset"></select>
+          </div>
+
+          <div class="form-field hidden" data-engine-group="redroid">
+            <label class="field-label" for="pf-adb-address">ADB 连接地址 (host:port)</label>
+            <input id="pf-adb-address" type="text" placeholder="例如：redroid:5555 或 127.0.0.1:5555" />
+          </div>
+
+          <div class="form-field form-full hidden" data-engine-group="redroid">
+            <label class="field-label">对应 Redroid 容器启动命令（在宿主机或 docker-compose.redroid.yml 运行）</label>
+            <pre id="pf-redroid-cmd" class="code-box" style="margin:0;white-space:pre-wrap;font-size:12px"></pre>
+          </div>
+
+          <div class="form-field" data-engine-group="emulator">
             <label class="field-label" for="pf-screen">屏幕分辨率</label>
             <select id="pf-screen"></select>
           </div>
 
-          <div class="form-field">
+          <div class="form-field" data-engine-group="emulator">
             <label class="field-label" for="pf-locale">系统语言</label>
             <select id="pf-locale"></select>
           </div>
 
-          <div class="form-field">
+          <div class="form-field" data-engine-group="emulator">
             <label class="field-label" for="pf-ram">分配内存</label>
             <select id="pf-ram">
-              <option value="2048">2 GB（极省内存）</option>
+              <option value="2048">2 GB（Android 9/11 极省内存）</option>
               <option value="3072" selected>3 GB（省内存推荐）</option>
               <option value="4096">4 GB（充裕多任务）</option>
               <option value="6144">6 GB（重度使用）</option>
             </select>
           </div>
 
-          <div class="form-field">
+          <div class="form-field" data-engine-group="emulator">
             <label class="field-label" for="pf-cores">分配 CPU 核心</label>
             <select id="pf-cores">
               <option value="2">2 核（低负载多开）</option>
@@ -363,7 +386,7 @@
           </div>
 
           <div class="form-field">
-            <label class="field-label" for="pf-idle">空闲自动关机（省资源）</label>
+            <label class="field-label" for="pf-idle">空闲自动关机/断开（省资源）</label>
             <select id="pf-idle">
               <option value="0">关闭（手动关机）</option>
               <option value="15">无连接 15 分钟后自动关机</option>
@@ -372,7 +395,7 @@
             </select>
           </div>
 
-          <div class="form-field">
+          <div class="form-field" data-engine-group="emulator">
             <label class="field-label" for="pf-storage">内部存储</label>
             <select id="pf-storage">
               <option value="16G" selected>16 GB</option>
@@ -380,7 +403,7 @@
             </select>
           </div>
 
-          <div class="form-field form-full">
+          <div class="form-field form-full" data-engine-group="emulator">
             <label class="field-label" for="pf-proxy">独立网络代理（可选，留空走宿主机直连）</label>
             <input id="pf-proxy" type="text" placeholder="例如：http://127.0.0.1:7890 或 http://user:pass@ip:port" />
           </div>

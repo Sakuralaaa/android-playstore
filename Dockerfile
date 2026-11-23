@@ -16,6 +16,7 @@ RUN sed -i "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g; s|http://secu
     && apt-get update && apt-get install -y --no-install-recommends \
       nodejs \
       openjdk-17-jre-headless \
+      adb \
       curl unzip ca-certificates procps socat tzdata \
       libpulse0 libgl1 libegl1 libgbm1 libnss3 \
       libx11-6 libxcb1 libxcb-cursor0 libxkbcommon0 \
